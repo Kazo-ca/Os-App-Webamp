@@ -98,8 +98,22 @@ export async function uploadToHome(page, file) {
     await openApp(page, 'File Explorer');
     const input = page.locator('input[type=file]').first();
     await input.waitFor({ state: 'attached', timeout: 30_000 });
-    await input.setInputFiles(file);
-    await page.getByText(path.basename(file), { exact: true }).first().waitFor({ timeout: 30_000 });
+    // The input is in the page before the explorer has listed ~ and wired its change handler: a
+    // file set that early is lost. Wait for the listing (the home folders), and set the file again
+    // if it still does not show.
+    await page.getByText('Documents', { exact: true }).first().waitFor({ timeout: 30_000 });
+    const shown = page.getByText(path.basename(file), { exact: true }).first();
+    for (let attempt = 0; ; attempt++) {
+        await input.setInputFiles(file);
+        try {
+            await shown.waitFor({ timeout: 15_000 });
+            return;
+        } catch (error) {
+            if (attempt === 1) {
+                throw error;
+            }
+        }
+    }
 }
 
 /**
