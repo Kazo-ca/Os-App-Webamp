@@ -8,4 +8,6 @@ namespace Kazo.Webamp.Tracks;
 /// <param name="Name">The name Webamp shows until it reads the file's tags (the file name).</param>
 /// <param name="MimeType">The audio media type, or <see langword="null"/> when the extension is unknown.</param>
 /// <param name="Bytes">The whole file.</param>
-public sealed record TrackData(string Key, string Name, string? MimeType, byte[] Bytes);
+/// <param name="DurationSeconds">The duration Webamp shows before it reads the file (from a
+/// playlist), or <see langword="null"/>.</param>
+public sealed record TrackData(string Key, string Name, string? MimeType, byte[] Bytes, double? DurationSeconds = null);

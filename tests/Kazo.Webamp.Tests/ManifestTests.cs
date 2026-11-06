@@ -47,6 +47,17 @@ public sealed class ManifestTests
         Assert.Contains(AppCapabilities.NotificationsPost, _app.Capabilities);
     }
 
+    [Theory]
+    [InlineData("audio/x-mpegurl", ".m3u")]
+    [InlineData("application/vnd.apple.mpegurl", ".m3u8")]
+    [InlineData("audio/x-scpls", ".pls")]
+    public void The_app_opens_the_three_playlist_formats(string mediaType, string extension)
+    {
+        FileHandler handler = Assert.Single(_app.FileHandlers, handler => handler.MediaType == mediaType);
+        Assert.Equal(new[] { extension }, handler.Extensions);
+        Assert.Equal(new[] { "open" }, handler.Actions);
+    }
+
     [Fact]
     public void The_window_opens_at_the_size_of_the_three_Webamp_windows_and_can_be_resized()
     {

@@ -12,14 +12,53 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="ActionFailed" xml:space="preserve">
+    <value>Webamp could not do that: {0}</value>
+  </data>
+  <data name="AllFiles" xml:space="preserve">
+    <value>All files</value>
+  </data>
+  <data name="DefaultListName" xml:space="preserve">
+    <value>playlist</value>
+  </data>
+  <data name="Dismiss" xml:space="preserve">
+    <value>Dismiss</value>
+  </data>
   <data name="FileFailed" xml:space="preserve">
     <value>{0} could not be read: {1}</value>
+  </data>
+  <data name="ListEmpty" xml:space="preserve">
+    <value>{0} has no track Webamp can play: the list stays as it was.</value>
+  </data>
+  <data name="ListSaved" xml:space="preserve">
+    <value>{0} saved.</value>
+  </data>
+  <data name="LoadListTitle" xml:space="preserve">
+    <value>Load a playlist</value>
   </data>
   <data name="Loading" xml:space="preserve">
     <value>Starting Webamp…</value>
   </data>
+  <data name="M3u8Filter" xml:space="preserve">
+    <value>Playlist (.m3u8)</value>
+  </data>
+  <data name="MoreFailed" xml:space="preserve">
+    <value>{0} other file(s) could not be read either.</value>
+  </data>
+  <data name="PathsUnresolved" xml:space="preserve">
+    <value>{0} location(s) of the list are not a Kazo OS path, such as {1}: left out.</value>
+  </data>
   <data name="PlayerLabel" xml:space="preserve">
     <value>Webamp music player</value>
+  </data>
+  <data name="PlaylistFilter" xml:space="preserve">
+    <value>Playlists (.m3u, .m3u8, .pls)</value>
+  </data>
+  <data name="SaveFailed" xml:space="preserve">
+    <value>{0} could not be saved: {1}</value>
+  </data>
+  <data name="SaveListTitle" xml:space="preserve">
+    <value>Save the playlist</value>
   </data>
   <data name="StartFailed" xml:space="preserve">
     <value>Webamp could not start: {0}</value>
@@ -44,5 +83,11 @@
   </data>
   <data name="SkinTip" xml:space="preserve">
     <value>To change the skin: double-click a .wsz file, or right-click ▸ Skins ▸ Load Skin…</value>
+  </data>
+  <data name="TracksNotSaved" xml:space="preserve">
+    <value>{0} track(s) dropped from the computer have no file in Kazo OS and are not in it.</value>
+  </data>
+  <data name="UrlsIgnored" xml:space="preserve">
+    <value>{0} web address(es) of the list left out: Webamp plays the files of Kazo OS only.</value>
   </data>
 </root>

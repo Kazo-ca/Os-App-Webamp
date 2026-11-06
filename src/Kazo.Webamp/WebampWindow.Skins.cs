@@ -1,5 +1,4 @@
 using Kazo.Os.App.Abstractions;
-using Kazo.Os.AppSdk;
 using Kazo.Os.AppSdk.Blazor;
 using Kazo.Os.AppSdk.IO;
 using Kazo.Os.Simulation.Abstractions.Gateways;
@@ -69,19 +68,16 @@ public sealed partial class WebampWindow
     }
 
     // Webamp's "Skins ▸ Load Skin…", or a skin dropped on Webamp: a file of the computer. Called
-    // from JavaScript, outside the OS's scope for the app: the file system needs it back.
+    // from JavaScript: FromWebampAsync enters the app's context the file system needs.
     private Task OnSkinFileChosenAsync(string fileName, byte[] bytes) =>
-        _skins is null ? Task.CompletedTask : InvokeAsync(async () =>
-        {
-            using IDisposable scope = KazoExecutionContext.Enter(AppContext);
-            await ImportSkinAsync(fileName, token => _skins.LoadFromComputerAsync(fileName, bytes, token));
-        });
+        _skins is null
+            ? Task.CompletedTask
+            : FromWebampAsync(() => ImportSkinAsync(fileName, token => _skins.LoadFromComputerAsync(fileName, bytes, token)));
 
     // A skin picked in Webamp's Skins menu: Webamp put it on, the app remembers it.
     private Task OnSkinChosenAsync(string? fileName) =>
-        _skins is null ? Task.CompletedTask : InvokeAsync(async () =>
+        _skins is null ? Task.CompletedTask : FromWebampAsync(async () =>
         {
-            using IDisposable scope = KazoExecutionContext.Enter(AppContext);
             try
             {
                 await _skins.ChosenAsync(fileName, AppContext.CancellationToken);

@@ -103,7 +103,7 @@ parallèle. Série `webamp/base` (créée depuis `main`), une PR par chantier ve
 | Kazo OS : ADR 0231 codée ([Os#381](https://github.com/Kazo-ca/Os/issues/381)) | `network-drives/app-access` (dépôt Kazo-ca/Os, PR vers `main`) | rien | À faire |
 | 1. Solution, manifeste, fenêtre qui contient Webamp, chargement des morceaux en `Blob` | `webamp/1-solution` | rien | Fait ([architecture](architecture.md)) |
 | 2. Ouvrir depuis l'OS : types audio, une seule fenêtre, ajouter et jouer, menus, dialogues, 1 Go | `webamp/2-open-files` | 1 | À faire |
-| 3. Listes `.m3u`, `.m3u8`, `.pls` | `webamp/3-playlists` | 1 | À faire |
+| 3. Listes `.m3u`, `.m3u8`, `.pls` | `webamp/3-playlists` | 1 | Fait ([architecture](architecture.md#listes-de-lecture)) |
 | 4. Skins `.wsz` et explication de l'import | `webamp/4-skins` | 1 | Fait ([architecture](architecture.md#skins)) |
 | 5. État retenu, titre, Media Session, raccourcis, Milkdrop | `webamp/5-state-and-media` | 1 | À faire |
 | 6. Fiche du Store, tests de bout en bout, `v1.0.0` | `webamp/6-store` | 2 à 5 | À faire |

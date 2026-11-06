@@ -57,11 +57,13 @@ sur <http://localhost:5290>.
 
 | Dossier ou fichier | Rôle |
 | --- | --- |
-| `WebampApp.cs` | Manifeste (`[AppManifest]`) : id `ca.kazo.webamp`, nom « Webamp », version `1.0.0`, éditeur `pub.kazo`, catégorie `multimedia`, **ordinateur seulement** (pas de `MobileEntryPoint`), `SingleInstancePerUser`. Fenêtre de 277×388 (le contenu : les trois fenêtres de Webamp empilées, 275×348, plus le cadre et la barre de titre de l'OS), redimensionnable, au plus petit la fenêtre principale seule. Capacités de base : `filesystem.user-home.read`, `filesystem.private.read` et `.write`. Les chantiers 2 à 5 ajoutent les leurs. |
-| `WebampWindow.razor` (+ `.cs`, `.css`) | La fenêtre : un élément où Webamp se dessine (`renderInto`) et une ligne d'état (démarrage, fichier illisible). Au premier rendu, elle démarre `WebampPlayer` et crée `TrackLibrary` ; ouverte sur un fichier (`LaunchFile`), elle le joue. Le bouton fermer de Webamp arrête le processus de l'app, ce qui ferme la fenêtre de l'OS et coupe le son. Le CSS cache « Add URL » (décision 9) et garde Webamp dans la fenêtre. |
-| `Player/WebampPlayer.cs` | Le côté C# d'une instance de Webamp : importe `wwwroot/js/webamp-host.js`, lui passe l'élément et une référence .NET, envoie les morceaux, reçoit les événements (`Closed`, `Minimized`, `TrackChanged`, `PlaylistChanged`). Implémente `ITrackPlayer`. `DisposeAsync` arrête la musique et libère tout. |
-| `Tracks/TrackLibrary.cs` | Les fichiers de la liste de Webamp (décision 14) : lus entiers par `KazoFile.ReadAllBytesAsync`, donnés à Webamp, oubliés quand ils sortent de la liste. API des chantiers 2 à 5 : `AddAsync(chemins, play)`, `ReplaceAsync(chemins, play)`, `Paths` (liste courante, dans l'ordre de Webamp), `LoadedBytes` (pour l'avertissement de 1 Go du chantier 2), `Changed`. Un fichier illisible est rendu dans `TrackLoadResult.Failures`, les autres sont ajoutés. |
-| `Tracks/ITrackPlayer.cs`, `TrackData.cs`, `TrackLoadResult.cs` | Le contrat entre la bibliothèque et Webamp (un faux dans les tests) ; un morceau envoyé (clé, nom, type, octets) ; le résultat d'un ajout. |
+| `WebampApp.cs` | Manifeste (`[AppManifest]`) : id `ca.kazo.webamp`, nom « Webamp », version `1.0.0`, éditeur `pub.kazo`, catégorie `multimedia`, **ordinateur seulement** (pas de `MobileEntryPoint`), `SingleInstancePerUser`. Fenêtre de 277×388 (le contenu : les trois fenêtres de Webamp empilées, 275×348, plus le cadre et la barre de titre de l'OS), redimensionnable, au plus petit la fenêtre principale seule. Capacités de base : `filesystem.user-home.read`, `filesystem.private.read` et `.write` ; le chantier 3 ajoute `filesystem.user-home.write`, `dialogs.file-open` et `dialogs.file-save` (« Load list », « Save list »). Types associés du chantier 3 : `audio/x-mpegurl .m3u`, `application/vnd.apple.mpegurl .m3u8`, `audio/x-scpls .pls` (action `open`). Les chantiers 2, 4 et 5 ajoutent les leurs. |
+| `WebampWindow.razor` (+ `.cs`, `.css`) | La fenêtre : un élément où Webamp se dessine (`renderInto`) et une ligne d'état (démarrage, fichier illisible, ce qu'une liste a laissé de côté), qu'un bouton × ferme. Au premier rendu, elle démarre `WebampPlayer` et crée `TrackLibrary` ; ouverte sur un fichier (`LaunchFile`), elle le joue, sur une liste elle ajoute ses morceaux et joue le premier (`OpenFilesAsync`). Elle répond à « Load list » et « Save list » de Webamp par les dialogues de l'OS. Le bouton fermer de Webamp arrête le processus de l'app, ce qui ferme la fenêtre de l'OS et coupe le son. Le CSS cache « Add URL » (décision 9) et garde Webamp dans la fenêtre. |
+| `Player/WebampPlayer.cs` | Le côté C# d'une instance de Webamp : importe `wwwroot/js/webamp-host.js`, lui passe l'élément et une référence .NET, envoie les morceaux, reçoit les événements (`Closed`, `Minimized`, `TrackChanged`, `PlaylistChanged`, `LoadListRequested`, `SaveListRequested`). Implémente `ITrackPlayer`. `DisposeAsync` arrête la musique et libère tout. |
+| `Tracks/TrackLibrary.cs` | Les fichiers de la liste de Webamp (décision 14) : lus entiers par `KazoFile.ReadAllBytesAsync`, donnés à Webamp, oubliés quand ils sortent de la liste. API des chantiers 2 à 5 : `AddAsync(chemins, play)`, `ReplaceAsync(chemins, play)` (et leurs surcharges qui prennent des `PlaylistEntry`, avec titre et durée), `TryGetPath(clé)`, `Paths` (liste courante, dans l'ordre de Webamp), `LoadedBytes` (pour l'avertissement de 1 Go du chantier 2), `Changed`. Un fichier illisible est rendu dans `TrackLoadResult.Failures`, les autres sont ajoutés. |
+| `Tracks/ITrackPlayer.cs`, `TrackData.cs`, `TrackLoadResult.cs` | Le contrat entre la bibliothèque et Webamp (un faux dans les tests) ; un morceau envoyé (clé, nom, type, octets, durée connue d'une liste) ; le résultat d'un ajout. |
+| `Playlists/` | Les listes de lecture (chantier 3, ci-dessous) : `PlaylistReader`, `PlaylistWriter`, `PlaylistPaths`, `PlaylistFiles`, `PlaylistFormats`. |
+| `Player/WebampListEntry.cs` | Un morceau de la liste de Webamp pour « Save list » (clé, titre, durée). |
 | `Tracks/AudioMediaTypes.cs` | Extension → type audio (décision 4), donné au `Blob` pour que le navigateur choisisse le bon décodeur. |
 | `Strings.cs`, `Resources/` | Textes en anglais et en français (ADR 0104 de Kazo OS), nom et description traduits du manifeste (`AppManifest.fr.resx`). |
 | `WebampWindow.Skins.cs` | Les skins de la fenêtre (chantier 4, [Skins](#skins)) : ouvrir un `.wsz`, « Load Skin… », skin choisi retenu, skin refusé avec un message, notification d'explication. |
@@ -85,19 +87,22 @@ WebampWindow ── TrackLibrary ── lit ──► KazoFile.ReadAllBytesAsync
                WebampPlayer ── import ──► webamp-host.js ── new Webamp(...) ──► renderInto(élément)
                     ▲                          │
                     └──── invokeMethodAsync ───┘  OnWebampClosed, OnWebampMinimized,
-                                                  OnTrackChanged, OnPlaylistChanged
+                                                  OnTrackChanged, OnPlaylistChanged,
+                                                  OnLoadListRequested, OnSaveListRequested
 ```
 
 | Appel | Sens | Contenu |
 | --- | --- | --- |
 | `create(élément, dotNet, { zIndex, skins, initialSkin })` | C# → JS | Charge `lib/webamp/webamp.bundle.min.mjs`, crée Webamp avec `enableHotkeys: false` (décision 17), un `handleAddUrlEvent` qui ne fait rien (décision 9), les skins du dossier de l'utilisateur (`availableSkins`) et le skin en cours (`initialSkin`), le dessine dans l'élément. Rend un objet hôte (une `IJSObjectReference`). Un skin est `{ key, name, bytes }` ; `key` est son nom de fichier dans le dossier. |
 | `addSkin(skin, apply)` | C# → JS | Ajoute un skin au menu Skins (ou remplace celui de même clé, dont l'adresse est rendue) ; avec `apply`, le met et attend que Webamp l'ait dessiné. |
-| `addTracks(morceaux, play)` | C# → JS | Ajoute à la fin de la liste ; avec `play`, le premier ajouté joue. Un morceau est `{ key, name, mimeType, bytes }` ; `bytes` est le `byte[]` du C#, reçu en `Uint8Array`. |
+| `addTracks(morceaux, play)` | C# → JS | Ajoute à la fin de la liste ; avec `play`, le premier ajouté joue. Un morceau est `{ key, name, mimeType, bytes, durationSeconds }` ; `bytes` est le `byte[]` du C#, reçu en `Uint8Array` ; `durationSeconds` (d'une liste, sinon `null`) est montrée jusqu'à ce que Webamp lise le fichier. |
 | `replaceTracks(morceaux, play)` | C# → JS | Remplace la liste (`setTracksToPlay`) ; sans `play`, Webamp est arrêté. |
 | `dispose()` | C# → JS | Arrête la musique, retire Webamp, rend toutes les adresses. |
 | `OnPlaylistChanged(clés)` | JS → C# | Les clés encore dans la liste, dans son ordre, à chaque changement réel (pas à chaque tic de l'horloge de Webamp). |
 | `OnTrackChanged({ artist, title } \| null)` | JS → C# | Le morceau qui commence (pour le titre de la fenêtre du chantier 5). |
 | `OnWebampClosed()`, `OnWebampMinimized()` | JS → C# | Les boutons fermer et réduire de Webamp. |
+| `OnLoadListRequested()` | JS → C# | « Load list » (`handleLoadListEvent`, qui rend `null` à Webamp : le C# remplace la liste lui-même). |
+| `OnSaveListRequested(morceaux, nonEnregistrés)` | JS → C# | « Save list » (`handleSaveListEvent`) : les morceaux qui ont une clé, `{ key, title, duration }` dans l'ordre (titre « Artiste - Titre » des étiquettes, sinon le nom affiché), et le nombre de morceaux sans clé (glissés depuis l'ordinateur). |
 | `OnSkinFileChosen(nom, octets)` | JS → C# | Un skin de l'ordinateur (« Skins ▸ Load Skin… » ou déposé sur Webamp), pas encore mis. |
 | `OnSkinChosen(clé \| null)` | JS → C# | Un skin choisi dans le menu Skins (Webamp le met lui-même) ; `null` pour « &lt;Base Skin&gt; ». |
 
@@ -146,6 +151,48 @@ le démarrage.
   fonctionnement de Webamp, les tests E2E en tiennent compte.
 - Webamp ajoute ses styles dans la page lui-même ; le `.razor` n'a ni style ni
   script en ligne (ADR 0007).
+
+## Listes de lecture
+
+Chantier 3, décision 10 du [plan](plan.md).
+
+- **Lire** (`PlaylistReader`) : `.m3u`, `.m3u8` et `.pls`. Chemins absolus ou
+  relatifs au dossier de la liste, `\` accepté (listes faites sous Windows),
+  `file:///…` lu comme un chemin. `#EXTINF:secondes,titre` (et `TitleN`,
+  `LengthN` d'un `.pls`) donne le titre et la durée affichés jusqu'à ce que
+  Webamp lise les étiquettes ; `-1` veut dire « durée inconnue ». Les adresses
+  web sont laissées de côté (pas d'« Add URL », décision 9) et comptées ; un
+  lecteur Windows (`C:\`), un partage (`\\serveur`) ou un chemin qui sort de `/`
+  aussi. Encodage : une marque d'ordre des octets d'abord ; sinon `.m3u8` en
+  UTF-8, `.m3u` et `.pls` en UTF-8 s'ils en sont, en Latin-1 sinon.
+- **Écrire** (`PlaylistWriter`) : `.m3u8` en UTF-8 sans marque, `#EXTM3U`, puis
+  `#EXTINF:secondes,titre` et le chemin **relatif** au dossier de la liste
+  (`../` pour remonter, `PlaylistPaths.GetRelativePath`). Sans titre, le nom du
+  fichier sans extension ; un saut de ligne dans un titre devient une espace.
+  Relue, la liste redonne les mêmes morceaux, et elle marche encore quand on
+  déplace le dossier qui la contient avec la musique.
+- **Ouvrir une liste** (double-clic, « Ouvrir avec », `launch`) : comme un
+  fichier audio (décision 5), ses morceaux s'ajoutent à la fin de la liste en
+  cours et le premier joue (`WebampWindow.OpenFilesAsync`, sur
+  `PlaylistFiles.ExpandAsync`). Un fichier manquant de la liste échoue à la
+  lecture comme tout fichier ; la ligne d'état dit le premier fichier illisible,
+  combien d'autres, et ce que la liste a laissé de côté.
+- **« Load list »** : la boîte « Ouvrir » de l'OS (`dialogs.file-open`, filtre
+  des listes), puis la liste **remplace** celle de Webamp, arrêtée, comme dans
+  Winamp. Une liste sans aucun morceau lisible laisse la liste en cours telle
+  quelle.
+- **« Save list »** : la boîte « Enregistrer sous » de l'OS
+  (`dialogs.file-save`, `.m3u8` par défaut, confirmation avant de remplacer),
+  puis l'écriture par `KazoFile.WriteAllBytesAsync`
+  (`filesystem.user-home.write`). Les morceaux glissés depuis l'ordinateur n'ont
+  pas de fichier dans Kazo OS : ils ne sont pas écrits, et la ligne d'état le dit.
+- Les menus de Webamp appellent le C# depuis JavaScript, hors des gestionnaires
+  de la fenêtre : `WebampWindow` entre lui-même dans le contexte ambiant de l'app
+  (`KazoExecutionContext.Enter`, ADR 0043 de Kazo OS) avant `KazoFile`, et
+  montre toute erreur dans la ligne d'état.
+- Les entrées du menu des fichiers (« Lire dans Webamp », « Ajouter à la liste
+  de Webamp ») sont celles du chantier 2 ; elles passent par `OpenFilesAsync`,
+  qui ouvre aussi les listes.
 
 ## Skins
 
@@ -198,16 +245,18 @@ Décisions 11 et 20 du [plan](plan.md).
 
 | Suite | Commande | Contenu |
 | --- | --- | --- |
-| C# (xUnit) | `dotnet test Kazo.Webamp.slnx -c Release` | Manifeste (dont le type `.wsz` et les capacités des skins) ; skins : `SkinArchive` (archive, `main.bmp` en casse et dossier quelconques, pas une archive, sans `main.bmp`, trop gros), `SkinLibrary` (dossier, liste triée et fichiers ignorés, copie, skin déjà dans le dossier, remplacement, refus sans copie, nom rendu sûr), `SkinController` (skin ouvert mis et retenu, skin de l'ordinateur, skin cassé refusé et skin en cours gardé, choix du menu et skin de base, skin retenu disparu, réglages cassés, notification une seule fois et de nouveau après un échec) ; `TrackLibrary` : ajout dans l'ordre avec le type, ajout à la fin, fichier illisible, rien envoyé quand rien ne se lit, morceau sorti de la liste oublié, ordre de Webamp, remplacement, changements de liste pendant l'ajout, échec de Webamp ; types audio. |
-| JavaScript | `npm test` | `webamp-host.js` avec un faux Webamp : options, adresses créées, gardées pendant l'arrivée d'un lot, rendues à la sortie de la liste, au remplacement et à `dispose`, rapports dédoublonnés, événements ; skins au démarrage (`availableSkins`, `initialSkin`), ajout trié et mis, remplacement, adresses rendues. `webamp-skins.js` avec un faux menu : entrées reconnues par leur place, « Load Skin… » pris à Webamp, annulation, choix rapportés, dépôt d'un skin. |
-| E2E (Playwright) | `npm run test:e2e` après le build Release | Webamp s'ouvre depuis le menu Applications dans sa fenêtre, sans « Add URL » ; un `.mp3` mis dans `~` par l'explorateur et ouvert par `launch ca.kazo.webamp /home/neo/tone.mp3` joue avec ses étiquettes, et le bouton fermer de Webamp ferme la fenêtre de l'OS ; un fichier absent est signalé. Skins (`skins.e2e.mjs`, skins fabriqués par `fixtures/make-skin.mjs`) : la notification au premier lancement, un `.wsz` ouvert par `launch` dans Webamp déjà ouvert est mis et listé dans le menu Skins ; « Load Skin… » met un skin et le garde, un skin cassé est refusé par une boîte de message et le skin reste, Webamp rouvert démarre avec le skin et sans nouvelle notification. |
+| C# (xUnit) | `dotnet test Kazo.Webamp.slnx -c Release` | Manifeste ; skins : `SkinArchive` (archive, `main.bmp` en casse et dossier quelconques, pas une archive, sans `main.bmp`, trop gros), `SkinLibrary` (dossier, liste triée et fichiers ignorés, copie, skin déjà dans le dossier, remplacement, refus sans copie, nom rendu sûr), `SkinController` (skin ouvert mis et retenu, skin de l'ordinateur, skin cassé refusé et skin en cours gardé, choix du menu et skin de base, skin retenu disparu, réglages cassés, notification une seule fois et de nouveau après un échec) ; `TrackLibrary` : ajout dans l'ordre avec le type, ajout à la fin, fichier illisible, rien envoyé quand rien ne se lit, morceau sorti de la liste oublié, ordre de Webamp, remplacement, changements de liste pendant l'ajout, échec de Webamp ; types audio ; listes : lecture (chemins relatifs et absolus, `\`, `#EXTINF`, adresses web, lecteurs Windows, Latin-1, UTF-8 avec et sans marque, `.pls`), écriture (UTF-8, chemins relatifs, titres sur une ligne), aller-retour, ouverture d'une liste avec d'autres fichiers, liste illisible, titre et durée jusqu'à Webamp, « Load list », « Save list » ; types associés et capacités. |
+| JavaScript | `npm test` | `webamp-host.js` avec un faux Webamp : options, adresses créées, gardées pendant l'arrivée d'un lot, rendues à la sortie de la liste, au remplacement et à `dispose`, rapports dédoublonnés, événements ; « Load list » et « Save list » (morceaux avec clé, titre, durée, morceaux sans clé comptés), durée d'une liste donnée à Webamp ; skins au démarrage (`availableSkins`, `initialSkin`), ajout trié et mis, remplacement, adresses rendues. `webamp-skins.js` avec un faux menu : entrées reconnues par leur place, « Load Skin… » pris à Webamp, annulation, choix rapportés, dépôt d'un skin. |
+| E2E (Playwright) | `npm run test:e2e` après le build Release | Webamp s'ouvre depuis le menu Applications dans sa fenêtre, sans « Add URL » ; un `.mp3` mis dans `~` par l'explorateur et ouvert par `launch ca.kazo.webamp /home/neo/tone.mp3` joue avec ses étiquettes, et le bouton fermer de Webamp ferme la fenêtre de l'OS ; un fichier absent est signalé ; « Save list » enregistre `mix.m3u8` par la boîte de l'OS, « New list » vide Webamp et « Load list » le remplit à nouveau ; un `.m3u` ouvert joue son morceau et signale le fichier manquant et l'adresse web. Skins (`skins.e2e.mjs`, skins fabriqués par `fixtures/make-skin.mjs`) : la notification au premier lancement, un `.wsz` ouvert par `launch` dans Webamp déjà ouvert est mis et listé dans le menu Skins ; « Load Skin… » met un skin et le garde, un skin cassé est refusé par une boîte de message et le skin reste, Webamp rouvert démarre avec le skin et sans nouvelle notification. |
 
 Le `.mp3` de test (`tests/e2e/fixtures/tone.mp3`, 4 s, 16 Ko) est fabriqué par
-`tests/e2e/fixtures/make-tone.sh` (ffmpeg) et validé dans le dépôt.
+`tests/e2e/fixtures/make-tone.sh` (ffmpeg) et validé dans le dépôt ;
+`tests/e2e/fixtures/tones.m3u` liste ce morceau, un fichier absent et une adresse web.
 
 ## Avancement
 
 | Chantier | Ce que ce document décrit |
 | --- | --- |
 | 1. `webamp/1-solution` | Solution, manifeste, fenêtre, `WebampPlayer`, `TrackLibrary`, module JavaScript. |
+| 3. `webamp/3-playlists` | Listes de lecture : lire, écrire, ouvrir, « Load list », « Save list ». |
 | 4. `webamp/4-skins` | Skins : type `.wsz`, dossier des skins, « Load Skin… », skin retenu, explication de l'import. |

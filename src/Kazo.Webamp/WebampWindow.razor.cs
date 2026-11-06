@@ -1,8 +1,11 @@
 using Kazo.Os.App.Abstractions;
+using Kazo.Os.AppSdk;
+using Kazo.Os.AppSdk.Blazor;
 using Kazo.Os.AppSdk.Globalization;
 using Kazo.Os.AppSdk.IO;
 using Kazo.Os.Simulation.Abstractions.Processes;
 using Kazo.Webamp.Player;
+using Kazo.Webamp.Playlists;
 using Kazo.Webamp.Skins;
 using Kazo.Webamp.Tracks;
 using Microsoft.AspNetCore.Components;
@@ -17,8 +20,10 @@ namespace Kazo.Webamp;
 /// </summary>
 /// <remarks>
 /// Opened on a file (a double-click, "Open with", <c>webamp song.mp3</c>), it plays that file; on a
-/// <c>.wsz</c>, it puts that skin on (<c>WebampWindow.Skins.cs</c>, work item 4). The
-/// <see cref="Tracks"/> library is what work items 2 to 5 build on (open, playlists, state).
+/// playlist, its tracks are added and the first one plays (decision 10); on a <c>.wsz</c>, it puts
+/// that skin on (<c>WebampWindow.Skins.cs</c>, work item 4). Webamp's "Load list" and "Save list" go
+/// through the OS dialogs. The <see cref="Tracks"/> library is what work items 2 to 5 build on (open,
+/// playlists, state).
 /// </remarks>
 public sealed partial class WebampWindow : IAsyncDisposable
 {
@@ -31,6 +36,7 @@ public sealed partial class WebampWindow : IAsyncDisposable
     private bool _failed;
     private bool _closing;
     private IStringLocalizer<Strings>? _localizer;
+    private readonly PlaylistFiles _playlists = new();
 
     [Inject]
     private IJSRuntime JavaScript { get; set; } = default!;
@@ -46,6 +52,8 @@ public sealed partial class WebampWindow : IAsyncDisposable
         if (_player is not null)
         {
             _player.PlaylistChanged -= OnPlaylistChanged;
+            _player.LoadListRequested -= OnLoadListRequestedAsync;
+            _player.SaveListRequested -= OnSaveListRequestedAsync;
             DetachSkins(_player);
             await _player.DisposeAsync();
             _player = null;
@@ -80,11 +88,14 @@ public sealed partial class WebampWindow : IAsyncDisposable
         _player = player;
         _player.Closed += OnWebampClosedAsync;
         _player.PlaylistChanged += OnPlaylistChanged;
+        _player.LoadListRequested += OnLoadListRequestedAsync;
+        _player.SaveListRequested += OnSaveListRequestedAsync;
         Tracks = new TrackLibrary(player);
         AttachSkins(player, skins);
         _status = null;
 
-        // Opened on a file: a skin is put on, music plays.
+        // Opened on a file: a skin is put on; music plays (a playlist: its tracks are added and the
+        // first one plays).
         if (LaunchFile is { } file)
         {
             await OpenAsync(file);
@@ -119,9 +130,9 @@ public sealed partial class WebampWindow : IAsyncDisposable
         await OpenAsync(file);
     }
 
-    // A file given to Webamp: a skin is put on, anything else goes to the list.
+    // A file given to Webamp: a skin is put on, anything else goes to the list and plays.
     private Task OpenAsync(VirtualPath file) =>
-        IsSkinFile(file) ? OpenSkinAsync(file) : PlayAsync([file]);
+        IsSkinFile(file) ? OpenSkinAsync(file) : OpenFilesAsync([file], play: true);
 
     // Webamp's close button (or "Exit" in its menu) closes the OS window: the app's own process
     // stops, which an app may always do (ADR 0140 of Kazo OS).
@@ -145,7 +156,13 @@ public sealed partial class WebampWindow : IAsyncDisposable
 
     private void OnPlaylistChanged(IReadOnlyList<string> keys) => Tracks?.OnPlaylistChanged(keys);
 
-    private async Task PlayAsync(IReadOnlyList<VirtualPath> files)
+    /// <summary>
+    /// Adds files at the end of Webamp's list (decision 5): an audio file is one track, a playlist
+    /// its tracks, in order. With <paramref name="play"/>, the first one added starts playing.
+    /// </summary>
+    /// <param name="files">The files opened.</param>
+    /// <param name="play">Whether the first track starts playing.</param>
+    internal async Task OpenFilesAsync(IReadOnlyList<VirtualPath> files, bool play)
     {
         if (Tracks is null)
         {
@@ -154,17 +171,170 @@ public sealed partial class WebampWindow : IAsyncDisposable
 
         try
         {
-            TrackLoadResult result = await Tracks.AddAsync(files, play: true, AppContext.CancellationToken);
-            if (result.Failures.Count > 0)
-            {
-                TrackLoadFailure failure = result.Failures[0];
-                Fail(L["FileFailed", KazoPath.GetFileName(failure.Path.Value) ?? failure.Path.Value, failure.Message]);
-            }
+            PlaylistExpansion expansion = await _playlists.ExpandAsync(files, AppContext.CancellationToken);
+            TrackLoadResult result = await Tracks.AddAsync(expansion.Entries, play, AppContext.CancellationToken);
+            Report(expansion, result);
         }
         catch (JSException exception)
         {
             Fail(L["StartFailed", exception.Message]);
         }
+    }
+
+    private Task OnLoadListRequestedAsync() => FromWebampAsync(LoadListAsync);
+
+    private Task OnSaveListRequestedAsync(IReadOnlyList<WebampListEntry> listed, int unsaved) =>
+        FromWebampAsync(() => SaveListAsync(listed, unsaved));
+
+    // Webamp's menus call C# from JavaScript, outside the window's own handlers: KazoFile needs the
+    // app's ambient context entered here (ADR 0043 of Kazo OS), and an error must be shown, since
+    // the host module has nobody to give it to.
+    private async Task FromWebampAsync(Func<Task> action)
+    {
+        using IDisposable scope = KazoExecutionContext.Enter(AppContext);
+        try
+        {
+            await action();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            Fail(L["ActionFailed", exception.Message]);
+        }
+    }
+
+    // "Load list" of Webamp: the OS's Open dialog, then the list replaces Webamp's, stopped, as
+    // Winamp does.
+    private async Task LoadListAsync()
+    {
+        if (Tracks is null)
+        {
+            return;
+        }
+
+        OpenFileDialogResult choice = await OpenFileAsync(new OpenFileDialogRequest
+        {
+            Title = L["LoadListTitle"],
+            InitialDirectory = VirtualPath.Parse(AppContext.HomeDirectory),
+            Filters = [PlaylistFilter(), new FileDialogFilter(L["AllFiles"], [], [])],
+        });
+        if (choice.Status != FileDialogStatus.Selected || choice.Resources.Count == 0)
+        {
+            return;
+        }
+
+        VirtualPath path = choice.Resources[0].Path;
+        try
+        {
+            PlaylistExpansion expansion = await _playlists.ExpandAsync([path], AppContext.CancellationToken);
+            if (expansion.Failures.Count == 0 && expansion.Entries.Count == 0)
+            {
+                // Nothing playable (only web addresses, say): Webamp's list stays as it was.
+                Report(expansion, null, L["ListEmpty", KazoPath.GetFileName(path.Value) ?? path.Value]);
+                return;
+            }
+
+            TrackLoadResult result = await Tracks.ReplaceAsync(expansion.Entries, play: false, AppContext.CancellationToken);
+            Report(expansion, result);
+        }
+        catch (JSException exception)
+        {
+            Fail(L["StartFailed", exception.Message]);
+        }
+    }
+
+    // "Save list" of Webamp: the OS's Save dialog, then a .m3u8 with paths relative to it.
+    private async Task SaveListAsync(IReadOnlyList<WebampListEntry> listed, int unsaved)
+    {
+        if (Tracks is null)
+        {
+            return;
+        }
+
+        SaveFileDialogResult choice = await SaveFileAsync(new SaveFileDialogRequest
+        {
+            Title = L["SaveListTitle"],
+            InitialDirectory = VirtualPath.Parse(AppContext.HomeDirectory),
+            SuggestedFileName = L["DefaultListName"] + PlaylistFormats.SaveExtension,
+            DefaultExtension = PlaylistFormats.SaveExtension,
+            Filters = [new FileDialogFilter(L["M3u8Filter"], [PlaylistFormats.SaveExtension], [PlaylistFormats.M3u8MediaType])],
+            ConfirmOverwrite = true,
+        });
+        if (choice.Status != FileDialogStatus.Selected || choice.Resource is null)
+        {
+            return;
+        }
+
+        VirtualPath path = choice.Resource.Path;
+        string name = KazoPath.GetFileName(path.Value) ?? path.Value;
+        try
+        {
+            await _playlists.SaveAsync(path, PlaylistFiles.ToEntries(Tracks, listed), AppContext.CancellationToken);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Fail(L["SaveFailed", name, exception.Message]);
+            return;
+        }
+
+        Inform(unsaved > 0 ? $"{L["ListSaved", name]} {L["TracksNotSaved", unsaved]}" : L["ListSaved", name]);
+    }
+
+    private FileDialogFilter PlaylistFilter() => new(
+        L["PlaylistFilter"],
+        [.. PlaylistFormats.Extensions],
+        [PlaylistFormats.M3uMediaType, PlaylistFormats.M3u8MediaType, PlaylistFormats.PlsMediaType]);
+
+    // One line for what could not be played: the files that failed, then what the lists left out.
+    private void Report(PlaylistExpansion expansion, TrackLoadResult? result, string? problem = null)
+    {
+        List<TrackLoadFailure> failures = [.. expansion.Failures, .. result?.Failures ?? []];
+        List<string> notes = problem is null ? [] : [problem];
+        if (failures.Count > 0)
+        {
+            TrackLoadFailure first = failures[0];
+            notes.Add(L["FileFailed", KazoPath.GetFileName(first.Path.Value) ?? first.Path.Value, first.Message]);
+            if (failures.Count > 1)
+            {
+                notes.Add(L["MoreFailed", failures.Count - 1]);
+            }
+        }
+
+        if (expansion.IgnoredUrls.Count > 0)
+        {
+            notes.Add(L["UrlsIgnored", expansion.IgnoredUrls.Count]);
+        }
+
+        if (expansion.Unresolved.Count > 0)
+        {
+            notes.Add(L["PathsUnresolved", expansion.Unresolved.Count, expansion.Unresolved[0]]);
+        }
+
+        if (notes.Count == 0)
+        {
+            Dismiss();
+        }
+        else if (failures.Count > 0 || problem is not null)
+        {
+            Fail(string.Join(' ', notes));
+        }
+        else
+        {
+            Inform(string.Join(' ', notes));
+        }
+    }
+
+    private void Inform(string message)
+    {
+        _failed = false;
+        _status = message;
+        StateHasChanged();
+    }
+
+    private void Dismiss()
+    {
+        _failed = false;
+        _status = null;
+        StateHasChanged();
     }
 
     private void Fail(string message)
