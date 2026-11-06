@@ -76,7 +76,8 @@ public sealed class WebampApp : AppDefinition
         // ~/.config/ca.kazo.webamp/ (the state of work item 5).
         AppCapabilities.FileSystemPrivateRead,
         AppCapabilities.FileSystemPrivateWrite,
-        // "Save list" writes a .m3u8 where the user chose (work item 3).
+        // Work items 3 and 4: "Save list" writes a .m3u8 where the user chose, and skins opened or
+        // loaded are copied to ~/.local/share/webamp/skins/ (decisions 10 and 11).
         AppCapabilities.FileSystemUserHomeWrite,
         // Webamp's "Open", "Add file" (work item 2) and "Load list" (work item 3).
         AppCapabilities.DialogFileOpen,
@@ -86,13 +87,17 @@ public sealed class WebampApp : AppDefinition
         AppCapabilities.DialogFolderSelect,
         // "Play in Webamp" and "Add to Webamp's list" in the file menus (work item 2, decision 5).
         AppCapabilities.ShellContextMenu,
+        // The first launch explains how to import a skin (work item 4, decision 20).
+        AppCapabilities.NotificationsPost,
     ];
 
     /// <inheritdoc />
     /// <remarks>
     /// Decision 4 (work item 2): the formats browsers play. No other OS app opens audio, so Webamp is
     /// their default app; each type comes from <see cref="AudioMediaTypes"/>, which also types the
-    /// Blob. Work item 3: playlists, whose tracks are added and the first one plays (decisions 5, 10).
+    /// Blob. Work item 3: playlists. Opening one adds its tracks to Webamp's list and plays the first one
+    /// (decisions 5 and 10). Work item 4: Winamp 2 skins; opening one puts it on and keeps it in the
+    /// Skins menu (decision 11).
     /// </remarks>
     public override IReadOnlyList<FileHandler> FileHandlers =>
     [
@@ -107,7 +112,11 @@ public sealed class WebampApp : AppDefinition
         new("audio/mp4", [".m4a"], ["open"]),
         new("audio/aac", [".aac"], ["open"]),
         new("audio/webm", [".weba"], ["open"]),
+        new(SkinMediaType, [".wsz"], ["open"]),
     ];
+
+    /// <summary>Media type of a Winamp 2 skin (<c>.wsz</c>).</summary>
+    public const string SkinMediaType = "application/x-winamp-skin";
 
     /// <inheritdoc />
     public override IReadOnlyList<AppIntentDeclarationManifest> Intents => [new(FilesIntent)];

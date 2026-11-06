@@ -7,6 +7,7 @@ using Kazo.Os.Simulation.Abstractions.Processes;
 using Kazo.Webamp.Opening;
 using Kazo.Webamp.Player;
 using Kazo.Webamp.Playlists;
+using Kazo.Webamp.Skins;
 using Kazo.Webamp.Tracks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Localization;
@@ -27,7 +28,8 @@ namespace Kazo.Webamp;
 /// tracks (decision 10). Webamp's "Open", "Add file" and "Add dir" (decision 16), "Load list" and
 /// "Save list" go through the OS dialogs.
 /// </para>
-/// <para>The <see cref="Tracks"/> library is what work items 4 and 5 build on (skins, state).</para>
+/// <para>A <c>.wsz</c> given to Webamp is a skin: it is put on (<c>WebampWindow.Skins.cs</c>, work item 4).</para>
+/// <para>The <see cref="Tracks"/> library is what work item 5 builds on (state).</para>
 /// </remarks>
 public sealed partial class WebampWindow : IAsyncDisposable
 {
@@ -67,6 +69,7 @@ public sealed partial class WebampWindow : IAsyncDisposable
             _player.OpenRequested -= OnOpenRequestedAsync;
             _player.LoadListRequested -= OnLoadListRequestedAsync;
             _player.SaveListRequested -= OnSaveListRequestedAsync;
+            DetachSkins(_player);
             await _player.DisposeAsync();
             _player = null;
         }
@@ -108,10 +111,12 @@ public sealed partial class WebampWindow : IAsyncDisposable
             return;
         }
 
+        // The user's skins first: Webamp starts with them in its menu and the skin in use on.
+        SkinController skins = await StartSkinsAsync();
         WebampPlayer player = new(JavaScript);
         try
         {
-            await player.StartAsync(_surface, AppContext.CancellationToken);
+            await player.StartAsync(_surface, skins.Library.Skins, skins.Current, AppContext.CancellationToken);
         }
         catch (Exception exception) when (exception is JSException or InvalidOperationException)
         {
@@ -127,9 +132,11 @@ public sealed partial class WebampWindow : IAsyncDisposable
         _player.SaveListRequested += OnSaveListRequestedAsync;
         _player.OpenRequested += OnOpenRequestedAsync;
         Tracks = new TrackLibrary(player);
+        AttachSkins(player, skins);
         _status = null;
         Opens.Start();
         StateHasChanged();
+        await ShowSkinTipOnceAsync();
     }
 
     private OpenQueue CreateQueue()
@@ -183,6 +190,20 @@ public sealed partial class WebampWindow : IAsyncDisposable
         // The queue may run after a call from JavaScript (a dialog), which carries no app context:
         // KazoFile and KazoDirectory need it (ADR 0043 of Kazo OS).
         using IDisposable scope = KazoExecutionContext.Enter(AppContext);
+
+        // A skin is put on rather than added to the list (work item 4, decision 11).
+        VirtualPath[] skins = [.. request.Paths.Where(IsSkinFile)];
+        foreach (VirtualPath skin in skins)
+        {
+            await OpenSkinAsync(skin);
+        }
+
+        if (skins.Length == request.Paths.Count)
+        {
+            return;
+        }
+
+        request = request with { Paths = [.. request.Paths.Where(path => !IsSkinFile(path))] };
         try
         {
             AudioFiles found = await _collector.CollectAsync(request.Paths, AppContext.CancellationToken);

@@ -104,7 +104,7 @@ parallèle. Série `webamp/base` (créée depuis `main`), une PR par chantier ve
 | 1. Solution, manifeste, fenêtre qui contient Webamp, chargement des morceaux en `Blob` | `webamp/1-solution` | rien | Fait ([architecture](architecture.md)) |
 | 2. Ouvrir depuis l'OS : types audio, une seule fenêtre, ajouter et jouer, menus, dialogues, 1 Go | `webamp/2-open-files` | 1 | Fait ([architecture](architecture.md#ouvrir-depuis-los)) |
 | 3. Listes `.m3u`, `.m3u8`, `.pls` | `webamp/3-playlists` | 1 | Fait ([architecture](architecture.md#listes-de-lecture)) |
-| 4. Skins `.wsz` et explication de l'import | `webamp/4-skins` | 1 | À faire |
+| 4. Skins `.wsz` et explication de l'import | `webamp/4-skins` | 1 | Fait ([architecture](architecture.md#skins)) |
 | 5. État retenu, titre, Media Session, raccourcis, Milkdrop | `webamp/5-state-and-media` | 1 | À faire |
 | 6. Fiche du Store, tests de bout en bout, `v1.0.0` | `webamp/6-store` | 2 à 5 | À faire |
 | 7. Sous-module sur la version de l'OS avec l'ADR 0231, essai sur `/mnt` ; bouton réduire de Webamp si [Os#384](https://github.com/Kazo-ca/Os/issues/384) est publiée | `webamp/7-network-drive` | Os#381 publiée, 1 | À faire |

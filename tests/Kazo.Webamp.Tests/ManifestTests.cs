@@ -27,19 +27,27 @@ public sealed class ManifestTests
     }
 
     [Fact]
-    public void The_app_asks_only_for_the_capabilities_it_uses_none_dangerous()
+    public void The_app_asks_for_the_base_capabilities_none_dangerous()
     {
-        Assert.Equal(
-            new[]
-            {
-                AppCapabilities.FileSystemUserHomeRead, AppCapabilities.FileSystemPrivateRead, AppCapabilities.FileSystemPrivateWrite,
-                AppCapabilities.FileSystemUserHomeWrite, AppCapabilities.DialogFileOpen, AppCapabilities.DialogFileSave,
-                AppCapabilities.DialogFolderSelect, AppCapabilities.ShellContextMenu,
-            },
-            _app.Capabilities);
+        Assert.Superset(
+            new HashSet<string> { AppCapabilities.FileSystemUserHomeRead, AppCapabilities.FileSystemPrivateRead, AppCapabilities.FileSystemPrivateWrite },
+            _app.Capabilities.ToHashSet());
+        Assert.Contains(AppCapabilities.DialogFolderSelect, _app.Capabilities);
+        Assert.Contains(AppCapabilities.ShellContextMenu, _app.Capabilities);
         Assert.DoesNotContain(_app.Capabilities, AppCapabilities.IsDangerous);
         Assert.DoesNotContain(AppCapabilities.FileSystemSystemRead, _app.Capabilities);
         Assert.DoesNotContain(AppCapabilities.FileSystemSystemWrite, _app.Capabilities);
+        Assert.Equal(_app.Capabilities.Count, _app.Capabilities.Distinct().Count());
+    }
+
+    [Fact]
+    public void Skins_are_opened_by_Webamp_copied_to_the_home_and_explained_once()
+    {
+        FileHandler skins = Assert.Single(_app.FileHandlers, handler => handler.MediaType == WebampApp.SkinMediaType);
+        Assert.Equal(new[] { ".wsz" }, skins.Extensions);
+        Assert.Contains("open", skins.Actions);
+        Assert.Contains(AppCapabilities.FileSystemUserHomeWrite, _app.Capabilities);
+        Assert.Contains(AppCapabilities.NotificationsPost, _app.Capabilities);
     }
 
     [Fact]

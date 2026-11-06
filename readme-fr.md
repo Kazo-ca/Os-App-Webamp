@@ -13,6 +13,15 @@ Le plan est validé ; l'implémentation se fait dans la série `webamp/base`.
 - Architecture : [Français](doc/fr/architecture.md) · [English](doc/en/architecture.md)
 - Licence : MIT ([LICENSE](LICENSE)) ; œuvres incluses et skin par défaut : [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
+## Changer de skin
+
+Pour changer de skin : **double-cliquez un fichier `.wsz`**, ou **clic droit sur
+Webamp ▸ Skins ▸ Load Skin…** (un fichier de l'ordinateur). Le skin est mis tout
+de suite et gardé dans `~/.local/share/webamp/skins/` : le menu Skins de Webamp
+liste tous les skins gardés, et Webamp redémarre avec le dernier choisi. Un
+fichier qui n'est pas un skin Winamp est refusé avec un message ; le skin en
+cours reste. Webamp le rappelle par une notification à son premier lancement.
+
 ## Compiler et lancer
 
 Le dépôt a été créé avec le modèle `kazoos-solution` de Kazo OS, sur Kazo OS 3.0.0
