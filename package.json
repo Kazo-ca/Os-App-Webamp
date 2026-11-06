@@ -1,0 +1,14 @@
+{
+  "name": "kazo-webamp-tests",
+  "private": true,
+  "description": "JavaScript tests of the Webamp app: the host module (node) and end-to-end runs in the Kazo OS host (Playwright).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/js/*.test.mjs",
+    "test:e2e": "node --test --test-concurrency=1 tests/e2e/*.e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

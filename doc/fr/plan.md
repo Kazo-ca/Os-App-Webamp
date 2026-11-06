@@ -30,7 +30,7 @@ Réponses de Benoit le 2026-11-06 (« ok » = la recommandation).
 | 3 | Base du dépôt | Modèle `kazoos-solution` sur Kazo OS **3.0.0** maintenant (le dépôt est vide, rien à migrer) ; le sous-module avance à la version qui apporte l'ADR 0231. |
 | 4 | Formats audio | `.mp3 .wav .ogg .oga .opus .flac .m4a .aac .weba` (ce que lisent les navigateurs). Aucune autre app de l'OS n'ouvre l'audio : Webamp devient l'app par défaut. |
 | 5 | Ouvrir quand Webamp est ouvert | Une seule fenêtre (`SingleInstancePerUser`). Ouvrir un fichier **l'ajoute à la liste et le joue** ; une sélection multiple s'ajoute en entier. Entrées du menu des fichiers : « Lire dans Webamp » et « Ajouter à la liste de Webamp » (fichiers et dossiers). |
-| 6 | Affichage | Une fenêtre de l'OS qui contient Webamp (`renderInto`), à la taille de ses fenêtres ; ses boutons fermer et réduire agissent sur la fenêtre de l'OS. Fenêtres flottantes plus tard : [Os#378](https://github.com/Kazo-ca/Os/issues/378). |
+| 6 | Affichage | Une fenêtre de l'OS qui contient Webamp (`renderInto`), à la taille de ses fenêtres ; ses boutons fermer et réduire agissent sur la fenêtre de l'OS. Réduire attend une API du SDK ([Os#384](https://github.com/Kazo-ca/Os/issues/384), réponse A de Benoit le 2026-11-06) : d'ici là, seul le bouton réduire de l'OS réduit ; le chantier 7 branche celui de Webamp. Fenêtres flottantes plus tard : [Os#378](https://github.com/Kazo-ca/Os/issues/378). |
 | 7 | Mobile | Ordinateur seulement pour la première version. |
 | 8 | Lecture en arrière-plan | Joue quand la fenêtre est réduite, s'arrête à la fermeture. Titre de la fenêtre « Artiste - Titre - Webamp ». Touches multimédia par Media Session. |
 | 9 | Musique depuis internet | Pas dans la première version, « Add URL » masqué. Plus tard : [#1](https://github.com/Kazo-ca/Os-App-Webamp/issues/1). |
@@ -101,10 +101,10 @@ parallèle. Série `webamp/base` (créée depuis `main`), une PR par chantier ve
 | Chantier | Branche | Dépend de | État |
 | --- | --- | --- | --- |
 | Kazo OS : ADR 0231 codée ([Os#381](https://github.com/Kazo-ca/Os/issues/381)) | `network-drives/app-access` (dépôt Kazo-ca/Os, PR vers `main`) | rien | À faire |
-| 1. Solution, manifeste, fenêtre qui contient Webamp, chargement des morceaux en `Blob` | `webamp/1-solution` | rien | À faire |
+| 1. Solution, manifeste, fenêtre qui contient Webamp, chargement des morceaux en `Blob` | `webamp/1-solution` | rien | Fait ([architecture](architecture.md)) |
 | 2. Ouvrir depuis l'OS : types audio, une seule fenêtre, ajouter et jouer, menus, dialogues, 1 Go | `webamp/2-open-files` | 1 | À faire |
 | 3. Listes `.m3u`, `.m3u8`, `.pls` | `webamp/3-playlists` | 1 | À faire |
 | 4. Skins `.wsz` et explication de l'import | `webamp/4-skins` | 1 | À faire |
 | 5. État retenu, titre, Media Session, raccourcis, Milkdrop | `webamp/5-state-and-media` | 1 | À faire |
 | 6. Fiche du Store, tests de bout en bout, `v1.0.0` | `webamp/6-store` | 2 à 5 | À faire |
-| 7. Sous-module sur la version de l'OS avec l'ADR 0231, essai sur `/mnt` | `webamp/7-network-drive` | Os#381 publiée, 1 | À faire |
+| 7. Sous-module sur la version de l'OS avec l'ADR 0231, essai sur `/mnt` ; bouton réduire de Webamp si [Os#384](https://github.com/Kazo-ca/Os/issues/384) est publiée | `webamp/7-network-drive` | Os#381 publiée, 1 | À faire |
