@@ -15,6 +15,12 @@
   <data name="Description" xml:space="preserve">
     <value>Un lecteur de musique dans le style de Winamp 2, construit sur Webamp</value>
   </data>
+  <data name="Menu.Enqueue" xml:space="preserve">
+    <value>Ajouter à la liste de Webamp</value>
+  </data>
+  <data name="Menu.Play" xml:space="preserve">
+    <value>Lire dans Webamp</value>
+  </data>
   <data name="Name" xml:space="preserve">
     <value>Webamp</value>
   </data>

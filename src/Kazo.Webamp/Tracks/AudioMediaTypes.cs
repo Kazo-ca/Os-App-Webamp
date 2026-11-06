@@ -22,6 +22,9 @@ public static class AudioMediaTypes
     /// <summary>Gets the extensions Webamp plays, dot included, lowercase.</summary>
     public static IReadOnlyCollection<string> Extensions => ByExtension.Keys;
 
+    /// <summary>Gets the media types of those extensions, each once.</summary>
+    public static IReadOnlyList<string> MediaTypes => [.. ByExtension.Values.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+
     /// <summary>Returns the media type of a file name, or <see langword="null"/> for another extension.</summary>
     /// <param name="fileName">A file name or path.</param>
     public static string? ForFile(string fileName)

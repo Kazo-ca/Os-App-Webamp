@@ -12,6 +12,9 @@ const hostProject = path.join(root, 'src', 'Kazo.Webamp.Os');
 /** The test track: four seconds of a 440 Hz tone, tagged "Kazo Test - Tone 440" (fixtures/make-tone.sh). */
 export const TONE = path.join(root, 'tests', 'e2e', 'fixtures', 'tone.mp3');
 
+/** A second track, told apart by its title: "Kazo Test - Tone 220" (fixtures/make-tone.sh). */
+export const TONE_220 = path.join(root, 'tests', 'e2e', 'fixtures', 'tone-220.mp3');
+
 /** A .m3u next to the tone: the tone, a missing file and a web address (fixtures/tones.m3u). */
 export const TONES_LIST = path.join(root, 'tests', 'e2e', 'fixtures', 'tones.m3u');
 
@@ -90,23 +93,29 @@ export async function openApp(page, name) {
 }
 
 /**
- * Copies a file of the computer into ~ (/home/neo) with the File Explorer's Upload button.
+ * Copies files of the computer into ~ (/home/neo) with the File Explorer's Upload button, or into
+ * the folder the explorer shows when it is already open.
  * @param {import('playwright').Page} page The page.
- * @param {string} file The file on the computer.
+ * @param {string | string[]} files The files on the computer.
+ * @param {{ openExplorer?: boolean }} [options] `openExplorer: false` uses the explorer already open.
  */
-export async function uploadToHome(page, file) {
-    await openApp(page, 'File Explorer');
+export async function uploadToHome(page, files, { openExplorer = true } = {}) {
+    if (openExplorer) {
+        await openApp(page, 'File Explorer');
+        // The explorer lists ~ first; an upload sent before that may be lost.
+        await page.locator('tr[data-item-path="/home/neo/Documents"]').first().waitFor({ timeout: 30_000 });
+    }
+    const list = Array.isArray(files) ? files : [files];
     const input = page.locator('input[type=file]').first();
     await input.waitFor({ state: 'attached', timeout: 30_000 });
-    // The input is in the page before the explorer has listed ~ and wired its change handler: a
-    // file set that early is lost. Wait for the listing (the home folders), and set the file again
-    // if it still does not show.
-    await page.getByText('Documents', { exact: true }).first().waitFor({ timeout: 30_000 });
-    const shown = page.getByText(path.basename(file), { exact: true }).first();
+    // The input is in the page before the explorer has listed the folder and wired its change
+    // handler: files set that early are lost. Set them again if they still do not show.
     for (let attempt = 0; ; attempt++) {
-        await input.setInputFiles(file);
+        await input.setInputFiles(list);
         try {
-            await shown.waitFor({ timeout: 15_000 });
+            for (const file of list) {
+                await page.getByText(path.basename(file), { exact: true }).first().waitFor({ timeout: 15_000 });
+            }
             return;
         } catch (error) {
             if (attempt === 1) {
@@ -114,6 +123,33 @@ export async function uploadToHome(page, file) {
             }
         }
     }
+}
+
+/**
+ * A row of the File Explorer (or of an OS file dialog) by its path.
+ * @param {import('playwright').Page | import('playwright').Locator} scope The page or a dialog.
+ * @param {string} itemPath The item's absolute path.
+ */
+export const explorerRow = (scope, itemPath) => scope.locator(`tr[data-item-path="${itemPath}"]`).first();
+
+// Webamp's window covers the left of the explorer's rows: rows are pressed on their right side.
+const ROW_RIGHT = { x: 420, y: 10 };
+
+/**
+ * Selects rows of the File Explorer (Ctrl for the next ones) and opens the file menu from the
+ * keyboard (Shift+F10), which keeps the selection.
+ * @param {import('playwright').Page} page The page.
+ * @param {string[]} paths The items, in the order they are selected.
+ */
+export async function openFileMenu(page, paths) {
+    // A first press on a window behind Webamp only brings it to the front: press its status bar first.
+    await page.getByText(/\d+ item\(s\)/).last().click();
+    for (const [index, itemPath] of paths.entries()) {
+        await explorerRow(page, itemPath).click({ position: ROW_RIGHT, modifiers: index === 0 ? [] : ['Control'] });
+    }
+    await page.getByText(new RegExp(`\\| ${paths.length} selected`)).last().waitFor({ timeout: 10_000 });
+    await page.keyboard.press('Shift+F10');
+    await page.getByRole('menu').first().waitFor({ timeout: 10_000 });
 }
 
 /**

@@ -5,6 +5,7 @@ using Kazo.Os.AppSdk.Globalization;
 using Kazo.Os.AppSdk.IO;
 using Kazo.Os.AppSdk.Diagnostics;
 using Kazo.Os.Simulation.Abstractions.Processes;
+using Kazo.Webamp.Opening;
 using Kazo.Webamp.Player;
 using Kazo.Webamp.Playlists;
 using Kazo.Webamp.Skins;
@@ -22,16 +23,20 @@ namespace Kazo.Webamp;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Opened on a file (a double-click, "Open with", <c>webamp song.mp3</c>), it plays that file; on a
-/// playlist, its tracks are added and the first one plays (decision 10); on a <c>.wsz</c>, it puts
-/// that skin on (<c>WebampWindow.Skins.cs</c>, work item 4). Webamp's "Load list" and "Save list"
-/// go through the OS dialogs. The <see cref="Tracks"/> library is what work items 2 to 5 build on
-/// (open, playlists, state).
+/// One window per user (decision 5): a file opened from the OS (a double-click, "Open with",
+/// <c>webamp song.mp3</c>), at launch or while the window is open, and the two file menu entries go
+/// through <see cref="OpenQueue"/>, which adds them at the end of the list in the order they came,
+/// the first of a burst playing. A folder brings its audio files, sorted by path; a playlist its
+/// tracks (decision 10). Webamp's "Open", "Add file" and "Add dir" (decision 16), "Load list" and
+/// "Save list" go through the OS dialogs.
 /// </para>
+/// <para>A <c>.wsz</c> given to Webamp is a skin: it is put on (<c>WebampWindow.Skins.cs</c>, work item 4).</para>
+/// <para>The <see cref="Tracks"/> library is what work item 5 builds on (state).</para>
 /// <para>
 /// At start it reads <c>~/.config/ca.kazo.webamp/state.json</c> and puts Webamp back as it was
-/// (decision 13); the skin in use stays in <c>skins.json</c> (work item 4). Every change is written
-/// there, grouped, and a last time when the window closes. The window's title follows the current track (decision 8), and Webamp's hotkeys act only while
+/// (decision 13), before the files it was opened on; the skin in use stays in <c>skins.json</c>
+/// (work item 4). Every change is written there, grouped, and a last time when the window closes.
+/// The window's title follows the current track (decision 8), and Webamp's hotkeys act only while
 /// the window has the focus (decision 17).
 /// </para>
 /// </remarks>
@@ -50,6 +55,11 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
     private WebampStateFile? _stateFile;
     private StateSaveScheduler? _saver;
     private readonly PlaylistFiles _playlists = new();
+    private readonly AudioFileCollector _collector = new();
+    private readonly LoadedMemoryWarning _memoryWarning = new();
+    private OpenQueue? _opens;
+    private bool _dialogOpen;
+    private VirtualPath? _lastFolder;
 
     [Inject]
     private IJSRuntime JavaScript { get; set; } = default!;
@@ -65,16 +75,20 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
 
     private IStringLocalizer<Strings> L => _localizer ??= AppContext.GetLocalizer<Strings>();
 
+    private OpenQueue Opens => _opens ??= CreateQueue();
+
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         // Closed without the close guard (the process was killed): one last try to save.
         await SaveLastTimeAsync();
+        _opens?.Stop();
         if (_player is not null)
         {
             _player.PlaylistChanged -= OnPlaylistChanged;
             _player.StateChanged -= OnStateChanged;
             _player.TrackChanged -= OnTrackChangedAsync;
+            _player.OpenRequested -= OnOpenRequestedAsync;
             _player.LoadListRequested -= OnLoadListRequestedAsync;
             _player.SaveListRequested -= OnSaveListRequestedAsync;
             DetachSkins(_player);
@@ -117,7 +131,32 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
     }
 
     /// <inheritdoc />
-    protected override void OnAppInitialized() => _status = L["Loading"];
+    protected override void OnAppInitialized()
+    {
+        _status = L["Loading"];
+
+        // Opened on files (a double-click, "Open with", a file menu entry, `webamp a.mp3 b.mp3`):
+        // they wait in the queue until Webamp is on screen.
+        if ((OpenIntents.Read(LaunchIntent) ?? OpenIntents.FromArguments(LaunchArguments)) is { } request)
+        {
+            Opens.Enqueue(request);
+        }
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A file opened while Webamp runs, a second launch with files, or a file menu entry: added to the
+    /// list (decision 5). Intents that arrive before Webamp is on screen wait in the queue.
+    /// </remarks>
+    protected override Task OnIntentReceivedAsync(AppIntentDelivery intent)
+    {
+        if (OpenIntents.Read(intent) is { } request)
+        {
+            Opens.Enqueue(request);
+        }
+
+        return Task.CompletedTask;
+    }
 
     /// <inheritdoc />
     protected override async Task OnAppAfterRenderAsync(bool firstRender)
@@ -150,6 +189,7 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
         _player.PlaylistChanged += OnPlaylistChanged;
         _player.LoadListRequested += OnLoadListRequestedAsync;
         _player.SaveListRequested += OnSaveListRequestedAsync;
+        _player.OpenRequested += OnOpenRequestedAsync;
         Tracks = new TrackLibrary(player);
         AttachSkins(player, skins);
         State = new WebampStateKeeper(player, Tracks);
@@ -170,45 +210,18 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
         _player.StateChanged += OnStateChanged;
         Tracks.Changed += OnStateChanged;
 
-        // Opened on a file: a skin is put on; music plays (a playlist: its tracks are added and the
-        // first one plays).
-        if (LaunchFile is { } file)
-        {
-            await OpenAsync(file);
-        }
-
+        // Files the window was opened on (or that arrived since) come after the saved list.
+        Opens.Start();
         StateHasChanged();
         await ShowSkinTipOnceAsync();
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Webamp is one window per user: a file opened while it runs (a double-click, <c>webamp x</c>)
-    /// arrives here with its path as the first argument.
-    /// </remarks>
-    protected override async Task OnIntentReceivedAsync(AppIntentDelivery intent)
+    private OpenQueue CreateQueue()
     {
-        if (intent.Arguments is not [{ } first, ..] || !first.StartsWith('/'))
-        {
-            return;
-        }
-
-        VirtualPath file;
-        try
-        {
-            file = VirtualPath.Parse(first);
-        }
-        catch (FormatException)
-        {
-            return;
-        }
-
-        await OpenAsync(file);
+        OpenQueue queue = new(request => InvokeAsync(() => OpenAsync(request)));
+        queue.Failed += exception => _ = InvokeAsync(() => Fail(L["ActionFailed", exception.Message]));
+        return queue;
     }
-
-    // A file given to Webamp: a skin is put on, anything else goes to the list and plays.
-    private Task OpenAsync(VirtualPath file) =>
-        IsSkinFile(file) ? OpenSkinAsync(file) : OpenFilesAsync([file], play: true);
 
     // Webamp's close button (or "Exit" in its menu) closes the OS window: the app's own process
     // stops, which an app may always do (ADR 0140 of Kazo OS).
@@ -280,28 +293,174 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
 
     /// <summary>
     /// Adds files at the end of Webamp's list (decision 5): an audio file is one track, a playlist
-    /// its tracks, in order. With <paramref name="play"/>, the first one added starts playing.
+    /// its tracks, a folder its audio files, in order. With <paramref name="play"/>, the first one
+    /// added starts playing.
     /// </summary>
     /// <param name="files">The files opened.</param>
     /// <param name="play">Whether the first track starts playing.</param>
-    internal async Task OpenFilesAsync(IReadOnlyList<VirtualPath> files, bool play)
+    internal Task OpenFilesAsync(IReadOnlyList<VirtualPath> files, bool play) =>
+        OpenAsync(new OpenRequest(files, play ? OpenMode.Play : OpenMode.Enqueue));
+
+    // One request of the queue: folders become their audio files, playlists their tracks, and the
+    // tracks go into Webamp's list.
+    private async Task OpenAsync(OpenRequest request)
     {
         if (Tracks is null)
         {
             return;
         }
 
+        // The queue may run after a call from JavaScript (a dialog), which carries no app context:
+        // KazoFile and KazoDirectory need it (ADR 0043 of Kazo OS).
+        using IDisposable scope = KazoExecutionContext.Enter(AppContext);
+
+        // A skin is put on rather than added to the list (work item 4, decision 11).
+        VirtualPath[] skins = [.. request.Paths.Where(IsSkinFile)];
+        foreach (VirtualPath skin in skins)
+        {
+            await OpenSkinAsync(skin);
+        }
+
+        if (skins.Length == request.Paths.Count)
+        {
+            return;
+        }
+
+        request = request with { Paths = [.. request.Paths.Where(path => !IsSkinFile(path))] };
         try
         {
-            PlaylistExpansion expansion = await _playlists.ExpandAsync(files, AppContext.CancellationToken);
-            TrackLoadResult result = await Tracks.AddAsync(expansion.Entries, play, AppContext.CancellationToken);
+            AudioFiles found = await _collector.CollectAsync(request.Paths, AppContext.CancellationToken);
+            PlaylistExpansion expansion = await _playlists.ExpandAsync(found.Files, AppContext.CancellationToken);
+            expansion = expansion with { Failures = [.. found.Failures, .. expansion.Failures] };
+            if (expansion.Entries.Count == 0)
+            {
+                // Nothing to play (an empty folder, a list of web addresses): the list stays as it was.
+                Report(expansion, null, expansion.Failures.Count == 0 ? L["NoAudioFiles", NameOf(request.Paths[0])].Value : null);
+                return;
+            }
+
+            TrackLoadResult result = request.Mode == OpenMode.Replace
+                ? await Tracks.ReplaceAsync(expansion.Entries, play: true, AppContext.CancellationToken)
+                : await Tracks.AddAsync(expansion.Entries, play: request.Mode == OpenMode.Play, AppContext.CancellationToken);
             Report(expansion, result);
+            WarnAboutMemory();
         }
         catch (JSException exception)
         {
             Fail(L["StartFailed", exception.Message]);
         }
     }
+
+    // Decision 14: every track is a whole file in memory; past 1 GB, say so once. The user may go on,
+    // so the queue does not wait for the answer.
+    private void WarnAboutMemory()
+    {
+        if (Tracks is null || !_memoryWarning.ShouldWarn(Tracks.LoadedBytes))
+        {
+            return;
+        }
+
+        string size = (Tracks.LoadedBytes / (double)LoadedMemoryWarning.Limit).ToString("0.0", System.Globalization.CultureInfo.CurrentCulture);
+        _ = ShowMemoryWarningAsync(L["MemoryWarning", size]);
+    }
+
+    private async Task ShowMemoryWarningAsync(string message)
+    {
+        try
+        {
+            await MessageBox(L["MemoryWarningTitle"], message, MessageBoxType.Ok, MessageBoxIcon.Warning, AppContext.CancellationToken);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or OperationCanceledException)
+        {
+            // The window closed while the message was shown.
+        }
+    }
+
+    // Webamp's "Open", "Add file" and "Add dir" (decision 16): the OS dialogs instead of the
+    // browser's file picker, which the host module stopped. One dialog at a time.
+    private Task OnOpenRequestedAsync(WebampOpenKind kind) => FromWebampAsync(async () =>
+    {
+        if (_dialogOpen)
+        {
+            return;
+        }
+
+        _dialogOpen = true;
+        try
+        {
+            if (await ChooseAsync(kind) is { } request)
+            {
+                Opens.Enqueue(request);
+            }
+        }
+        finally
+        {
+            _dialogOpen = false;
+        }
+    });
+
+    private async Task<OpenRequest?> ChooseAsync(WebampOpenKind kind)
+    {
+        VirtualPath start = await StartFolderAsync();
+        if (kind == WebampOpenKind.AddFolder)
+        {
+            SelectFolderDialogResult folder = await SelectFolderAsync(
+                new SelectFolderDialogRequest { Title = L["AddFolderTitle"], InitialDirectory = start }, AppContext.CancellationToken);
+            if (folder is not { Status: FileDialogStatus.Selected, Resource: { } chosen })
+            {
+                return null;
+            }
+
+            _lastFolder = ParentOf(chosen.Path);
+            return new OpenRequest([chosen.Path], OpenMode.Enqueue);
+        }
+
+        OpenFileDialogResult files = await OpenFileAsync(
+            new OpenFileDialogRequest
+            {
+                Title = kind == WebampOpenKind.Open ? L["OpenTitle"] : L["AddFilesTitle"],
+                InitialDirectory = start,
+                AllowMultiple = true,
+                Filters = [MusicFilter(), new FileDialogFilter(L["AllFiles"], [], [])],
+            },
+            AppContext.CancellationToken);
+        if (files.Status != FileDialogStatus.Selected || files.Resources.Count == 0)
+        {
+            return null;
+        }
+
+        _lastFolder = ParentOf(files.Resources[0].Path);
+        return new OpenRequest(
+            [.. files.Resources.Select(resource => resource.Path)],
+            kind == WebampOpenKind.Open ? OpenMode.Replace : OpenMode.Enqueue);
+    }
+
+    // Where the dialogs open: the last folder used, else ~/Music when it exists, else ~. Always given:
+    // without it the dialogs of Kazo OS 3.0.0 open /home/<user id>, which does not exist.
+    private async Task<VirtualPath> StartFolderAsync()
+    {
+        string music = KazoPath.Combine(AppContext.HomeDirectory, "Music");
+        foreach (string? candidate in new[] { _lastFolder?.Value, music })
+        {
+            if (candidate is not null && await KazoDirectory.ExistsAsync(candidate, AppContext.CancellationToken))
+            {
+                return VirtualPath.Parse(candidate);
+            }
+        }
+
+        return VirtualPath.Parse(AppContext.HomeDirectory);
+    }
+
+    // Music Webamp opens: the audio formats and the playlists.
+    private FileDialogFilter MusicFilter() => new(
+        L["MusicFilter"],
+        [.. AudioMediaTypes.Extensions.Order(StringComparer.Ordinal), .. PlaylistFormats.Extensions],
+        [.. AudioMediaTypes.MediaTypes, PlaylistFormats.M3uMediaType, PlaylistFormats.M3u8MediaType, PlaylistFormats.PlsMediaType]);
+
+    private static VirtualPath? ParentOf(VirtualPath path) =>
+        KazoPath.GetDirectoryName(path.Value) is { Length: > 0 } parent ? VirtualPath.Parse(parent) : null;
+
+    private static string NameOf(VirtualPath path) => KazoPath.GetFileName(path.Value) is { Length: > 0 } name ? name : path.Value;
 
     private Task OnLoadListRequestedAsync() => FromWebampAsync(LoadListAsync);
 
