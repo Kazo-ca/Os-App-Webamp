@@ -1,3 +1,4 @@
+using Kazo.Webamp.Skins;
 using Kazo.Webamp.State;
 using Kazo.Webamp.Tracks;
 using Microsoft.AspNetCore.Components;
@@ -15,7 +16,7 @@ namespace Kazo.Webamp.Player;
 /// events arrive through the <see cref="JSInvokableAttribute"/> methods below, called by the module
 /// with <c>invokeMethodAsync</c>.
 /// </remarks>
-public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
+public sealed class WebampPlayer : ITrackPlayer, ISkinPlayer, IStatePlayer, IAsyncDisposable
 {
     /// <summary>Path of the host module, served by the app's Razor library.</summary>
     public const string ModulePath = "./_content/Kazo.Webamp/js/webamp-host.js";
@@ -51,6 +52,18 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
     /// </summary>
     public event Action? StateChanged;
 
+    /// <summary>
+    /// Raised with the file name and bytes of a skin the user chose on the computer (Webamp's
+    /// "Skins ▸ Load Skin…", or a skin dropped on Webamp); Webamp has not put it on.
+    /// </summary>
+    public event Func<string, byte[], Task>? SkinFileChosen;
+
+    /// <summary>
+    /// Raised when the user picked a skin in Webamp's Skins menu, which Webamp puts on itself: its
+    /// <see cref="SkinFile.FileName"/>, or <see langword="null"/> for "&lt;Base Skin&gt;".
+    /// </summary>
+    public event Func<string?, Task>? SkinChosen;
+
     /// <summary>Raised when the user chose "Load list" in Webamp (decision 10: the OS dialog opens).</summary>
     public event Func<Task>? LoadListRequested;
 
@@ -67,18 +80,28 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
     /// <param name="element">An empty element of the window, sized by the window.</param>
     /// <param name="cancellationToken">Cancels the start.</param>
     public Task StartAsync(ElementReference element, CancellationToken cancellationToken = default) =>
-        StartAsync(element, settings: null, focused: false, cancellationToken);
+        StartAsync(element, [], null, settings: null, focused: false, cancellationToken);
 
     /// <summary>
-    /// Loads Webamp with saved settings and renders it into <paramref name="element"/>: the volume,
-    /// equalizer, window layout and double size are there from the first frame.
+    /// Loads Webamp with the user's skins and saved settings and renders it into
+    /// <paramref name="element"/>: the skin, volume, equalizer, window layout and double size are
+    /// there from the first frame.
     /// </summary>
     /// <param name="element">An empty element of the window, sized by the window.</param>
+    /// <param name="skins">The skins of Webamp's Skins menu, in order.</param>
+    /// <param name="initialSkin">The skin to start with, or <see langword="null"/> for Webamp's base skin.</param>
     /// <param name="settings">The saved settings, or <see langword="null"/> for Webamp's defaults.</param>
     /// <param name="focused">Whether the app's window has the focus (Webamp's hotkeys act).</param>
     /// <param name="cancellationToken">Cancels the start.</param>
-    public async Task StartAsync(ElementReference element, PlayerSettings? settings, bool focused, CancellationToken cancellationToken = default)
+    public async Task StartAsync(
+        ElementReference element,
+        IReadOnlyList<SkinFile> skins,
+        SkinFile? initialSkin,
+        PlayerSettings? settings = null,
+        bool focused = false,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(skins);
         if (_host is not null)
         {
             throw new InvalidOperationException("Webamp is already started.");
@@ -86,7 +109,14 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
 
         _self ??= DotNetObjectReference.Create(this);
         _module ??= await _javaScript.InvokeAsync<IJSObjectReference>("import", cancellationToken, ModulePath);
-        _host = await _module.InvokeAsync<IJSObjectReference>("create", cancellationToken, element, _self, new { zIndex = 0, settings, focused });
+        _host = await _module.InvokeAsync<IJSObjectReference>("create", cancellationToken, element, _self, new
+        {
+            zIndex = 0,
+            skins = skins.Select(ToJs).ToArray(),
+            initialSkin = initialSkin?.FileName,
+            settings,
+            focused,
+        });
     }
 
     /// <inheritdoc />
@@ -96,10 +126,6 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask ResumeAsync(int index, double position, CancellationToken cancellationToken = default) =>
         await Host.InvokeAsync<bool>("resume", cancellationToken, index, position);
-
-    /// <inheritdoc />
-    public ValueTask ApplySkinAsync(string name, byte[] bytes, CancellationToken cancellationToken = default) =>
-        Host.InvokeVoidAsync("setSkin", cancellationToken, bytes);
 
     /// <summary>
     /// Lets Webamp's hotkeys act while the app's window has the focus, and only then (decision 17).
@@ -117,6 +143,13 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
     /// <inheritdoc />
     public ValueTask ReplaceAsync(IReadOnlyList<TrackData> tracks, bool play, CancellationToken cancellationToken = default) =>
         Host.InvokeVoidAsync("replaceTracks", cancellationToken, ToJs(tracks), play);
+
+    /// <inheritdoc />
+    public async ValueTask AddSkinAsync(SkinFile skin, bool apply, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(skin);
+        await Host.InvokeVoidAsync("addSkin", cancellationToken, ToJs(skin), apply);
+    }
 
     /// <summary>Called by the host module when Webamp closed.</summary>
     [JSInvokable]
@@ -139,6 +172,17 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
     /// <param name="keys">The keys still listed, in order.</param>
     [JSInvokable]
     public void OnPlaylistChanged(string[] keys) => PlaylistChanged?.Invoke(keys);
+
+    /// <summary>Called by the host module with a skin the user chose on the computer.</summary>
+    /// <param name="fileName">Its file name.</param>
+    /// <param name="bytes">Its content (a <c>Uint8Array</c> on the JavaScript side).</param>
+    [JSInvokable]
+    public Task OnSkinFileChosen(string fileName, byte[] bytes) => SkinFileChosen?.Invoke(fileName, bytes) ?? Task.CompletedTask;
+
+    /// <summary>Called by the host module when a skin was picked in Webamp's Skins menu.</summary>
+    /// <param name="fileName">The skin's key (its file name), or <see langword="null"/> for the base skin.</param>
+    [JSInvokable]
+    public Task OnSkinChosen(string? fileName) => SkinChosen?.Invoke(fileName) ?? Task.CompletedTask;
 
     /// <summary>Called by the host module when "Load list" was chosen.</summary>
     [JSInvokable]
@@ -181,6 +225,9 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
     }
 
     private IJSObjectReference Host => _host ?? throw new InvalidOperationException("Webamp is not started.");
+
+    // A skin's key is its file name in the skins folder.
+    private static object ToJs(SkinFile skin) => new { key = skin.FileName, name = skin.Name, bytes = skin.Bytes };
 
     // byte[] crosses to JavaScript as a Uint8Array.
     private static object[] ToJs(IReadOnlyList<TrackData> tracks) =>

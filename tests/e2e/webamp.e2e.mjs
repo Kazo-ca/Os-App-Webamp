@@ -61,7 +61,8 @@ test('an .mp3 of the user opened with Webamp plays, and Webamp\'s close button c
     // Read through KazoFile, handed over as a Blob, its tags read by Webamp, and playing.
     await page.locator('#main-window.play').waitFor({ timeout: 30_000 });
     await page.locator('#playlist-window').getByText('Kazo Test - Tone 440').waitFor({ timeout: 15_000 });
-    // The duration shows once Webamp has read the file's header, a moment after its tags.
+    // Webamp shows the tags first and the duration once the audio element has read it: wait for it
+    // rather than reading the list once (on a loaded machine the duration comes a moment later).
     await page.locator('#playlist-window').getByText(/0:04/).first().waitFor({ timeout: 15_000 });
     assert.equal(await taskbarButton(page).count(), 1);
 

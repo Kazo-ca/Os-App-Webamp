@@ -20,13 +20,6 @@ public interface IStatePlayer
     /// <param name="cancellationToken">Cancels the request.</param>
     /// <returns>A task completed once Webamp was told.</returns>
     ValueTask ResumeAsync(int index, double position, CancellationToken cancellationToken = default);
-
-    /// <summary>Applies a skin file's bytes (a <c>.wsz</c>).</summary>
-    /// <param name="name">The file's name.</param>
-    /// <param name="bytes">Its content.</param>
-    /// <param name="cancellationToken">Cancels the request.</param>
-    /// <returns>A task completed once Webamp was told.</returns>
-    ValueTask ApplySkinAsync(string name, byte[] bytes, CancellationToken cancellationToken = default);
 }
 
 /// <summary>What Webamp holds at one moment.</summary>

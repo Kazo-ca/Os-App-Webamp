@@ -69,8 +69,7 @@ public static class WebampStateJson
             tracks.Add(path);
         }
 
-        string? skin = TryNormalize(document.Skin, out string? skinPath) ? skinPath : null;
-        return new WebampState(tracks, current, FromDocument(document.Player), skin);
+        return new WebampState(tracks, current, FromDocument(document.Player));
     }
 
     private static PlayerSettings FromDocument(PlayerDocument? player)
@@ -142,7 +141,6 @@ public static class WebampStateJson
             Version = WebampState.FormatVersion,
             Tracks = [.. state.Tracks],
             CurrentTrack = state.CurrentTrack,
-            Skin = state.Skin,
             Player = new PlayerDocument
             {
                 Position = Math.Round(player.Position, 3),
@@ -221,8 +219,6 @@ internal sealed class StateDocument
     public int? CurrentTrack { get; set; }
 
     public PlayerDocument? Player { get; set; }
-
-    public string? Skin { get; set; }
 }
 
 internal sealed class PlayerDocument

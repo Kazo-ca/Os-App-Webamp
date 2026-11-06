@@ -15,8 +15,7 @@ public sealed class WebampStateJsonTests
     private static WebampState Full() => new(
         ["/home/neo/Music/one.mp3", "/mnt/nas/two.flac"],
         1,
-        new PlayerSettings(42.5, 63, -20, true, false, new EqualizerSettings(false, true, 60, [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]), true, Layout),
-        "/home/neo/.local/share/webamp/skins/green.wsz");
+        new PlayerSettings(42.5, 63, -20, true, false, new EqualizerSettings(false, true, 60, [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]), true, Layout));
 
     [Fact]
     public void A_state_written_reads_back_the_same()
@@ -27,7 +26,6 @@ public sealed class WebampStateJsonTests
 
         Assert.Equal(state.Tracks, read.Tracks);
         Assert.Equal(state.CurrentTrack, read.CurrentTrack);
-        Assert.Equal(state.Skin, read.Skin);
         Assert.Equal(state.Player, read.Player);
     }
 
@@ -63,7 +61,6 @@ public sealed class WebampStateJsonTests
 
         Assert.Empty(state.Tracks);
         Assert.Null(state.CurrentTrack);
-        Assert.Null(state.Skin);
         Assert.Equal(PlayerSettings.Default, state.Player);
     }
 
@@ -113,14 +110,13 @@ public sealed class WebampStateJsonTests
     public void Paths_the_OS_refuses_are_dropped_and_the_current_track_follows_its_file()
     {
         const string json = """
-            { "version": 1, "tracks": ["relative.mp3", null, "/home/neo/../neo/a.mp3", "C:\\b.mp3", "/home/neo/c.mp3"], "currentTrack": 4, "skin": "skin.wsz" }
+            { "version": 1, "tracks": ["relative.mp3", null, "/home/neo/../neo/a.mp3", "C:\\b.mp3", "/home/neo/c.mp3"], "currentTrack": 4 }
             """;
 
         WebampState state = WebampStateJson.Parse(json);
 
         Assert.Equal(["/home/neo/a.mp3", "/home/neo/c.mp3"], state.Tracks);
         Assert.Equal(1, state.CurrentTrack);
-        Assert.Null(state.Skin);
     }
 
     [Fact]

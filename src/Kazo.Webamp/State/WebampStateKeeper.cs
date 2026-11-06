@@ -1,5 +1,4 @@
 using Kazo.Os.App.Abstractions;
-using Kazo.Os.AppSdk.IO;
 using Kazo.Webamp.Tracks;
 
 namespace Kazo.Webamp.State;
@@ -11,48 +10,31 @@ namespace Kazo.Webamp.State;
 /// <remarks>
 /// Webamp's settings and window layout go to Webamp when it is created
 /// (<see cref="Player.WebampPlayer.StartAsync"/>): they are drawn from the first frame. This class
-/// does the rest, once Webamp is on screen: the list, the current track and its position, the skin.
+/// does the rest, once Webamp is on screen: the list, the current track and its position. The skin
+/// is the skins work item's (<c>skins.json</c>).
 /// </remarks>
 public sealed class WebampStateKeeper
 {
     private readonly IStatePlayer _player;
     private readonly TrackLibrary _tracks;
-    private readonly Func<string, CancellationToken, Task<byte[]>> _readAllBytes;
     private PlaylistMemory _memory = PlaylistMemory.Empty;
 
-    /// <summary>Creates a keeper that reads skins through the Kazo OS file system.</summary>
+    /// <summary>Creates a keeper.</summary>
     /// <param name="player">Webamp.</param>
     /// <param name="tracks">The files of Webamp's list.</param>
     public WebampStateKeeper(IStatePlayer player, TrackLibrary tracks)
-        : this(player, tracks, KazoFile.ReadAllBytesAsync)
-    {
-    }
-
-    /// <summary>Creates a keeper with its own file reader (the tests).</summary>
-    /// <param name="player">Webamp.</param>
-    /// <param name="tracks">The files of Webamp's list.</param>
-    /// <param name="readAllBytes">Reads a whole file (the skin).</param>
-    public WebampStateKeeper(IStatePlayer player, TrackLibrary tracks, Func<string, CancellationToken, Task<byte[]>> readAllBytes)
     {
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(tracks);
-        ArgumentNullException.ThrowIfNull(readAllBytes);
         _player = player;
         _tracks = tracks;
-        _readAllBytes = readAllBytes;
     }
-
-    /// <summary>
-    /// Gets or sets the skin file applied, saved with the state; <see langword="null"/> is Webamp's
-    /// default skin. The skins work item sets it when the user picks a skin.
-    /// </summary>
-    public string? SkinPath { get; set; }
 
     /// <summary>Gets the files of the saved list that could not be read at start; they stay in the saved list.</summary>
     public IReadOnlyList<string> MissingTracks => _memory.MissingTracks;
 
     /// <summary>
-    /// Puts the saved list, current track, position and skin back. A file that cannot be read is
+    /// Puts the saved list, current track and position back. A file that cannot be read is
     /// skipped, and stays in the saved list.
     /// </summary>
     /// <param name="state">The saved state.</param>
@@ -61,8 +43,6 @@ public sealed class WebampStateKeeper
     public async Task<TrackLoadResult> RestoreAsync(WebampState state, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(state);
-        await RestoreSkinAsync(state.Skin, cancellationToken);
-
         List<VirtualPath> paths = [.. state.Tracks.Select(VirtualPath.Parse)];
         TrackLoadResult result = paths.Count == 0
             ? new TrackLoadResult([], [])
@@ -94,26 +74,6 @@ public sealed class WebampStateKeeper
             [.. _tracks.Paths.Select(path => path.Value)],
             snapshot.CurrentKey);
         PlayerSettings settings = current is null ? snapshot.Settings with { Position = 0 } : snapshot.Settings;
-        return new WebampState(tracks, current, settings, SkinPath);
-    }
-
-    private async Task RestoreSkinAsync(string? skin, CancellationToken cancellationToken)
-    {
-        SkinPath = null;
-        if (skin is null)
-        {
-            return;
-        }
-
-        try
-        {
-            byte[] bytes = await _readAllBytes(skin, cancellationToken);
-            await _player.ApplySkinAsync(KazoPath.GetFileName(skin) ?? skin, bytes, cancellationToken);
-            SkinPath = skin;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            // The skin is gone: Webamp keeps its default skin, and the next save forgets it.
-        }
+        return new WebampState(tracks, current, settings);
     }
 }

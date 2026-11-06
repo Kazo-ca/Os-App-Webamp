@@ -59,7 +59,7 @@ sur <http://localhost:5290>.
 | --- | --- |
 | `WebampApp.cs` | Manifeste (`[AppManifest]`) : id `ca.kazo.webamp`, nom « Webamp », version `1.0.0`, éditeur `pub.kazo`, catégorie `multimedia`, **ordinateur seulement** (pas de `MobileEntryPoint`), `SingleInstancePerUser`. Fenêtre de 277×388 (le contenu : les trois fenêtres de Webamp empilées, 275×348, plus le cadre et la barre de titre de l'OS), redimensionnable, au plus petit la fenêtre principale seule. Capacités de base : `filesystem.user-home.read`, `filesystem.private.read` et `.write` ; le chantier 3 ajoute `filesystem.user-home.write`, `dialogs.file-open` et `dialogs.file-save` (« Load list », « Save list »). Types associés du chantier 3 : `audio/x-mpegurl .m3u`, `application/vnd.apple.mpegurl .m3u8`, `audio/x-scpls .pls` (action `open`). Les chantiers 2, 4 et 5 ajoutent les leurs. |
 | `WebampWindow.razor` (+ `.cs`, `.css`) | La fenêtre : un élément où Webamp se dessine (`renderInto`) et une ligne d'état (démarrage, fichier illisible, ce qu'une liste a laissé de côté), qu'un bouton × ferme. Au premier rendu, elle démarre `WebampPlayer` et crée `TrackLibrary` ; ouverte sur un fichier (`LaunchFile`), elle le joue, sur une liste elle ajoute ses morceaux et joue le premier (`OpenFilesAsync`). Elle répond à « Load list » et « Save list » de Webamp par les dialogues de l'OS. Le bouton fermer de Webamp arrête le processus de l'app, ce qui ferme la fenêtre de l'OS et coupe le son. Le CSS cache « Add URL » (décision 9) et garde Webamp dans la fenêtre. Au démarrage, elle relit l'état (`state.json`) et le remet dans Webamp ; elle écrit l'état à chaque changement (regroupé) et une dernière fois à la fermeture (`IWindowCloseGuard`, arrêt du processus, `DisposeAsync`). Son titre suit le morceau en cours (`Player/TrackTitle`), et elle dit au module quand elle a le focus (raccourcis). |
-| `Player/WebampPlayer.cs` | Le côté C# d'une instance de Webamp : importe `wwwroot/js/webamp-host.js`, lui passe l'élément, une référence .NET et les réglages enregistrés, envoie les morceaux, reçoit les événements (`Closed`, `Minimized`, `TrackChanged`, `PlaylistChanged`, `LoadListRequested`, `SaveListRequested`, `StateChanged`). Implémente `ITrackPlayer` et `IStatePlayer` (lire l'état, reprendre un morceau à sa position, appliquer un skin) ; `SetFocusedAsync` règle les raccourcis. `DisposeAsync` arrête la musique et libère tout. |
+| `Player/WebampPlayer.cs` | Le côté C# d'une instance de Webamp : importe `wwwroot/js/webamp-host.js`, lui passe l'élément, une référence .NET et les réglages enregistrés, envoie les morceaux, reçoit les événements (`Closed`, `Minimized`, `TrackChanged`, `PlaylistChanged`, `LoadListRequested`, `SaveListRequested`, `StateChanged`). Implémente `ITrackPlayer` et `IStatePlayer` (lire l'état, reprendre un morceau à sa position) ; `SetFocusedAsync` règle les raccourcis. `DisposeAsync` arrête la musique et libère tout. |
 | `Player/TrackTitle.cs` | Le titre de la fenêtre de l'OS : « Artiste - Titre - Webamp », « Titre - Webamp » sans artiste, le nom du fichier sans étiquettes, « Webamp » sans morceau (décision 8). |
 | `State/` | L'état retenu (chantier 5, ci-dessous) : `WebampState` (le contenu de `state.json`), `WebampStateJson` (lecture tolérante, écriture), `WebampStateFile` (le fichier), `StateSaveScheduler` (écritures regroupées), `PlaylistMemory` (fichiers disparus gardés dans la liste), `WebampStateKeeper` (remettre l'état dans Webamp, le relire), `IStatePlayer`. |
 | `Tracks/TrackLibrary.cs` | Les fichiers de la liste de Webamp (décision 14) : lus entiers par `KazoFile.ReadAllBytesAsync`, donnés à Webamp, oubliés quand ils sortent de la liste. API des chantiers 2 à 5 : `AddAsync(chemins, play)`, `ReplaceAsync(chemins, play)` (et leurs surcharges qui prennent des `PlaylistEntry`, avec titre et durée), `TryGetPath(clé)`, `Paths` (liste courante, dans l'ordre de Webamp), `LoadedBytes` (pour l'avertissement de 1 Go du chantier 2), `Changed`. Un fichier illisible est rendu dans `TrackLoadResult.Failures`, les autres sont ajoutés. |
@@ -68,7 +68,10 @@ sur <http://localhost:5290>.
 | `Player/WebampListEntry.cs` | Un morceau de la liste de Webamp pour « Save list » (clé, titre, durée). |
 | `Tracks/AudioMediaTypes.cs` | Extension → type audio (décision 4), donné au `Blob` pour que le navigateur choisisse le bon décodeur. |
 | `Strings.cs`, `Resources/` | Textes en anglais et en français (ADR 0104 de Kazo OS), nom et description traduits du manifeste (`AppManifest.fr.resx`). |
+| `WebampWindow.Skins.cs` | Les skins de la fenêtre (chantier 4, [Skins](#skins)) : ouvrir un `.wsz`, « Load Skin… », skin choisi retenu, skin refusé avec un message, notification d'explication. |
+| `Skins/` | `SkinArchive` (un `.wsz` est-il un skin ?), `SkinLibrary` (le dossier `~/.local/share/webamp/skins/`), `SkinSettings` (`~/.config/ca.kazo.webamp/skins.json`), `SkinController` (le tout pour une fenêtre), `ISkinFileSystem` et `KazoSkinFileSystem` (les fichiers, en mémoire dans les tests), `ISkinPlayer` (ce que les skins demandent à Webamp). |
 | `wwwroot/js/webamp-host.js` | Le module JavaScript (ci-dessous). |
+| `wwwroot/js/webamp-skins.js` | Le pont du menu Skins de Webamp (voir [Skins](#skins)). |
 | `wwwroot/lib/` | Webamp 2.3.1, Butterchurn et ses préréglages, chacun avec sa licence ([THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md)). |
 | `wwwroot/icons/app.svg` | L'icône. |
 
@@ -92,7 +95,8 @@ WebampWindow ── TrackLibrary ── lit ──► KazoFile.ReadAllBytesAsync
 
 | Appel | Sens | Contenu |
 | --- | --- | --- |
-| `create(élément, dotNet, { zIndex, settings, focused })` | C# → JS | Charge `lib/webamp/webamp.bundle.min.mjs`, crée Webamp avec `enableMediaSession: true` (décision 8), un `handleAddUrlEvent` qui ne fait rien (décision 9), Milkdrop paresseux (décision 12) et, depuis `settings` (les `PlayerSettings` enregistrés, `null` au premier lancement), la disposition des fenêtres (`windowLayout`) et la taille double ; remet le volume, la balance, l'égaliseur, shuffle et repeat et, si l'utilisateur avait déplacé les fenêtres, leurs places exactes, avant la première image ; le dessine dans l'élément. Rend un objet hôte (une `IJSObjectReference`). |
+| `create(élément, dotNet, { zIndex, skins, initialSkin, settings, focused })` | C# → JS | Charge `lib/webamp/webamp.bundle.min.mjs`, crée Webamp avec `enableHotkeys: true` et son écouteur de page capturé (décision 17), `enableMediaSession: true` (décision 8), un `handleAddUrlEvent` qui ne fait rien (décision 9), les skins du dossier de l'utilisateur (`availableSkins`) et le skin en cours (`initialSkin`) et, depuis `settings` (les `PlayerSettings` enregistrés, `null` au premier lancement), la disposition des fenêtres (`windowLayout`) et la taille double, Milkdrop paresseux (décision 12) ; remet le volume, la balance, l'égaliseur, shuffle et repeat et, si l'utilisateur avait déplacé les fenêtres, leurs places exactes, avant la première image ; le dessine dans l'élément. Rend un objet hôte (une `IJSObjectReference`). Un skin est `{ key, name, bytes }` ; `key` est son nom de fichier dans le dossier. |
+| `addSkin(skin, apply)` | C# → JS | Ajoute un skin au menu Skins (ou remplace celui de même clé, dont l'adresse est rendue) ; avec `apply`, le met et attend que Webamp l'ait dessiné. |
 | `addTracks(morceaux, play)` | C# → JS | Ajoute à la fin de la liste ; avec `play`, le premier ajouté joue. Un morceau est `{ key, name, mimeType, bytes, durationSeconds }` ; `bytes` est le `byte[]` du C#, reçu en `Uint8Array` ; `durationSeconds` (d'une liste, sinon `null`) est montrée jusqu'à ce que Webamp lise le fichier. |
 | `replaceTracks(morceaux, play)` | C# → JS | Remplace la liste (`setTracksToPlay`) ; sans `play`, Webamp est arrêté. |
 | `dispose()` | C# → JS | Arrête la musique, retire Webamp, rend toutes les adresses. |
@@ -100,12 +104,13 @@ WebampWindow ── TrackLibrary ── lit ──► KazoFile.ReadAllBytesAsync
 | `OnTrackChanged({ artist, title, name } \| null)` | JS → C# | Le morceau en cours, qu'il joue ou soit en pause, à chaque changement de morceau ou d'étiquettes (`name` : le nom du fichier) ; `null` sans morceau. Pour le titre de la fenêtre. |
 | `readState()` | C# → JS | Ce que Webamp tient (`PlayerSnapshot`) : la clé du morceau en cours, la position (0 à l'arrêt), le volume, la balance, shuffle, repeat, l'égaliseur, la taille double, les quatre fenêtres (place, ouverte, enroulée, taille en plus) et si leurs places sont fixées par l'utilisateur. |
 | `resume(index, position)` | C# → JS | Rend un morceau courant sans le jouer ; avec une position, attend qu'il soit chargé, s'y place et met Webamp en pause (Play repart de là). |
-| `setSkin(octets)` | C# → JS | Applique un skin (`.wsz`) par une adresse `blob:`, rendue au skin suivant ou à `dispose`. |
 | `setFocused(focus)` | C# → JS | Les raccourcis de Webamp agissent seulement quand la fenêtre a le focus. |
 | `OnStateChanged()` | JS → C# | Un élément de l'état a changé (pas l'horloge : la position compte par pas de 5 s pendant la lecture). |
 | `OnWebampClosed()`, `OnWebampMinimized()` | JS → C# | Les boutons fermer et réduire de Webamp. |
 | `OnLoadListRequested()` | JS → C# | « Load list » (`handleLoadListEvent`, qui rend `null` à Webamp : le C# remplace la liste lui-même). |
 | `OnSaveListRequested(morceaux, nonEnregistrés)` | JS → C# | « Save list » (`handleSaveListEvent`) : les morceaux qui ont une clé, `{ key, title, duration }` dans l'ordre (titre « Artiste - Titre » des étiquettes, sinon le nom affiché), et le nombre de morceaux sans clé (glissés depuis l'ordinateur). |
+| `OnSkinFileChosen(nom, octets)` | JS → C# | Un skin de l'ordinateur (« Skins ▸ Load Skin… » ou déposé sur Webamp), pas encore mis. |
+| `OnSkinChosen(clé \| null)` | JS → C# | Un skin choisi dans le menu Skins (Webamp le met lui-même) ; `null` pour « &lt;Base Skin&gt; ». |
 
 **Les `Blob`.** Pour chaque morceau, le module crée un `Blob` typé et son
 adresse (`URL.createObjectURL`) et donne à Webamp un morceau **par adresse**
@@ -196,6 +201,53 @@ Chantier 3, décision 10 du [plan](plan.md).
   de Webamp ») sont celles du chantier 2 ; elles passent par `OpenFilesAsync`,
   qui ouvre aussi les listes.
 
+## Skins
+
+Décisions 11 et 20 du [plan](plan.md).
+
+- **Le dossier.** Chaque skin ouvert ou chargé est copié dans
+  `~/.local/share/webamp/skins/` (capacité `filesystem.user-home.write`), sous
+  son propre nom de fichier, rendu sûr (sans chemin ni caractère de contrôle)
+  et terminé par `.wsz` (un `.zip` devient un `.wsz`). Un skin du même nom
+  remplace l'ancien. Au démarrage, `SkinLibrary` relit le dossier : chaque
+  `.wsz` valide devient une entrée du menu Skins de Webamp, triée par nom ; un
+  fichier illisible ou qui n'est pas un skin est laissé là et pas listé.
+- **Un skin valide.** `SkinArchive` vérifie en C#, avant toute copie et avant
+  Webamp : une archive ZIP d'au plus 16 Mo qui contient `main.bmp` (à la
+  racine ou dans un dossier, casse ignorée). Sinon une boîte de message
+  (« Bento.wsz n'a pas été chargé : … Le skin en cours reste. ») et rien n'est
+  envoyé à Webamp. Webamp, lui, ne sait signaler un skin cassé que par un
+  `alert` du navigateur.
+- **Ouvrir un `.wsz` dans l'OS** (double-clic, « Ouvrir avec », `webamp
+  skin.wsz`) : type associé `application/x-winamp-skin` `.wsz` ; au lancement
+  (`LaunchFile`) ou dans la fenêtre déjà ouverte (`OnIntentReceivedAsync`, une
+  fenêtre par utilisateur), le skin est copié, ajouté au menu et mis. Un `.wsz`
+  qui est déjà dans le dossier est seulement mis.
+- **« Skins ▸ Load Skin… » de Webamp.** Webamp 2.3.1 n'a pas d'option pour ce
+  menu : il ouvre son propre `input type=file` et applique le fichier sans le
+  rendre. `webamp-skins.js` écoute les clics de la page en phase de capture
+  (avant Webamp) et reconnaît l'entrée par sa place dans le menu de Webamp
+  (`#webamp-context-menu`, sous-menu dont le texte est « Skins » : « Load
+  Skin... », un séparateur, « &lt;Base Skin&gt; », puis les skins dans l'ordre
+  donné). Pour « Load Skin… », il arrête le clic, ferme le menu, ouvre le
+  sélecteur de fichiers du navigateur (fichier de l'ordinateur, décision 11) et
+  envoie le fichier au C#, qui le vérifie, le copie et le met. Un seul `.wsz`
+  ou `.zip` déposé sur Webamp suit le même chemin.
+- **Skin retenu.** Un skin choisi dans le menu est mis par Webamp lui-même ; le
+  module rapporte lequel (`OnSkinChosen`, par sa place dans le menu) et
+  `SkinSettings` l'écrit dans `~/.config/ca.kazo.webamp/skins.json`
+  (`{ "current": "Bento.wsz", "importTipShown": true }`). Au lancement suivant,
+  Webamp démarre avec ce skin (`initialSkin`) ; un skin retenu qui n'est plus
+  dans le dossier redonne le skin de base. Le chantier 5 l'a laissé là :
+  `state.json` ne contient pas le skin, qui n'a ainsi qu'une place.
+- **Explication de l'import** (décision 20). Au premier lancement, une
+  notification (`notifications.post`) : « Pour changer de skin : double-cliquez
+  un fichier .wsz, ou clic droit ▸ Skins ▸ Load Skin… ». `importTipShown` passe
+  à `true` une fois la notification postée ; si elle est refusée, elle sera
+  tentée au lancement suivant. Même texte dans le README.
+- **Mémoire.** Les skins sont donnés à Webamp en adresses `blob:` créées par le
+  module et rendues quand un skin est remplacé et à `dispose`.
+
 ## État, titre, raccourcis, Milkdrop
 
 Chantier 5, décisions 8, 12, 13 et 17 du [plan](plan.md).
@@ -215,8 +267,7 @@ réglages propre à l'app (ADR 0044 de Kazo OS : `filesystem.private.read` et
     "equalizer": { "on": true, "auto": false, "preamp": 50, "bands": [50, 50, 50, 50, 50, 50, 50, 50, 50, 50] },
     "doubleSize": false,
     "windows": { "absolute": true, "main": { "x": 0, "y": 0, "open": true, "shade": false, "extraWidth": 0, "extraHeight": 0 }, "…": "equalizer, playlist, milkdrop" }
-  },
-  "skin": "/home/neo/.local/share/webamp/skins/vert.wsz"
+  }
 }
 ```
 
@@ -228,7 +279,7 @@ réglages propre à l'app (ADR 0044 de Kazo OS : `filesystem.private.read` et
   côté.
 - **Remettre** : les réglages et la disposition partent avec la création de
   Webamp (`create`), donc dès la première image ; puis `WebampStateKeeper`
-  remet le skin, ajoute la liste **sans jouer**, rend le morceau courant et le
+  ajoute la liste **sans jouer**, rend le morceau courant et le
   replace à sa position, en pause. Un fichier qui a disparu (lecteur réseau
   absent, fichier déplacé) est **sauté** et **reste dans la liste enregistrée**,
   à sa place, après le morceau qui le précédait (`PlaylistMemory`) : il revient
@@ -246,9 +297,9 @@ réglages propre à l'app (ADR 0044 de Kazo OS : `filesystem.private.read` et
 - **Position** : lue sur l'élément audio de Webamp (0 à l'arrêt). Webamp
   repart du début quand on lance un morceau arrêté : la reprise le laisse donc
   **en pause** à la position enregistrée.
-- **Skin** : `WebampStateKeeper.SkinPath` est enregistré et réappliqué au
-  démarrage (`setSkin`) ; un skin disparu laisse le skin par défaut. Le
-  chantier 4 (skins) le règle quand l'utilisateur choisit un skin.
+- **Skin** : pas dans `state.json`. Le skin en cours reste dans `skins.json`
+  ([Skins](#skins)), que Webamp lit à sa création (`initialSkin`) : un seul
+  fichier pour le skin, pas de copie à tenir à jour.
 
 **Le titre** de la fenêtre de l'OS suit le morceau en cours, qu'il joue ou soit
 en pause : « Artiste - Titre - Webamp » (décision 8, comme le bouton de Winamp
@@ -284,9 +335,9 @@ Milkdrop ouvert le charge au démarrage.
 
 | Suite | Commande | Contenu |
 | --- | --- | --- |
-| C# (xUnit) | `dotnet test Kazo.Webamp.slnx -c Release` | Manifeste ; `TrackLibrary` : ajout dans l'ordre avec le type, ajout à la fin, fichier illisible, rien envoyé quand rien ne se lit, morceau sorti de la liste oublié, ordre de Webamp, remplacement, changements de liste pendant l'ajout, échec de Webamp ; types audio ; listes : lecture (chemins relatifs et absolus, `\`, `#EXTINF`, adresses web, lecteurs Windows, Latin-1, UTF-8 avec et sans marque, `.pls`), écriture (UTF-8, chemins relatifs, titres sur une ligne), aller-retour, ouverture d'une liste avec d'autres fichiers, liste illisible, titre et durée jusqu'à Webamp, « Load list », « Save list » ; types associés et capacités. ; état : aller-retour du JSON, fichier corrompu ou d'une autre version = état vide, valeurs ramenées dans leurs limites, chemins refusés, fichier absent, dossier créé ; fichiers disparus gardés à leur place et sautés, morceau courant suivi ; écritures regroupées, immédiates à la fermeture, jamais deux à la fois, échec signalé ; reprise de la liste, de la position et du skin ; titre de la fenêtre. |
-| JavaScript | `npm test` | `webamp-host.js` avec un faux Webamp : options, adresses créées, gardées pendant l'arrivée d'un lot, rendues à la sortie de la liste, au remplacement et à `dispose`, rapports dédoublonnés, événements ; « Load list » et « Save list » (morceaux avec clé, titre, durée, morceaux sans clé comptés), durée d'une liste donnée à Webamp. ; Media Session, disposition et réglages remis avant la première image, état lu, changements signalés (l'horloge par pas de 5 s), reprise en pause à une position, raccourcis seulement avec le focus (écouteur de Webamp capturé), Milkdrop chargé à la première ouverture, skin par adresse `blob:`. |
-| E2E (Playwright) | `npm run test:e2e` après le build Release | Webamp s'ouvre depuis le menu Applications dans sa fenêtre, sans « Add URL » ; un `.mp3` mis dans `~` par l'explorateur et ouvert par `launch ca.kazo.webamp /home/neo/tone.mp3` joue avec ses étiquettes, et le bouton fermer de Webamp ferme la fenêtre de l'OS ; un fichier absent est signalé ; « Save list » enregistre `mix.m3u8` par la boîte de l'OS, « New list » vide Webamp et « Load list » le remplit à nouveau ; un `.m3u` ouvert joue son morceau et signale le fichier manquant et l'adresse web. ; titre « Kazo Test - Tone 440 - Webamp » dans la barre des tâches, puis après un rechargement de la page Webamp revient avec sa liste, en pause, avec le même volume et repeat ; les raccourcis de Webamp ne font rien quand l'explorateur a le focus et agissent quand Webamp l'a ; Butterchurn n'est téléchargé qu'à l'ouverture de Milkdrop (`state.e2e.mjs`). |
+| C# (xUnit) | `dotnet test Kazo.Webamp.slnx -c Release` | Manifeste ; skins : `SkinArchive` (archive, `main.bmp` en casse et dossier quelconques, pas une archive, sans `main.bmp`, trop gros), `SkinLibrary` (dossier, liste triée et fichiers ignorés, copie, skin déjà dans le dossier, remplacement, refus sans copie, nom rendu sûr), `SkinController` (skin ouvert mis et retenu, skin de l'ordinateur, skin cassé refusé et skin en cours gardé, choix du menu et skin de base, skin retenu disparu, réglages cassés, notification une seule fois et de nouveau après un échec) ; `TrackLibrary` : ajout dans l'ordre avec le type, ajout à la fin, fichier illisible, rien envoyé quand rien ne se lit, morceau sorti de la liste oublié, ordre de Webamp, remplacement, changements de liste pendant l'ajout, échec de Webamp ; types audio ; listes : lecture (chemins relatifs et absolus, `\`, `#EXTINF`, adresses web, lecteurs Windows, Latin-1, UTF-8 avec et sans marque, `.pls`), écriture (UTF-8, chemins relatifs, titres sur une ligne), aller-retour, ouverture d'une liste avec d'autres fichiers, liste illisible, titre et durée jusqu'à Webamp, « Load list », « Save list » ; types associés et capacités. ; état : aller-retour du JSON, fichier corrompu ou d'une autre version = état vide, valeurs ramenées dans leurs limites, chemins refusés, fichier absent, dossier créé ; fichiers disparus gardés à leur place et sautés, morceau courant suivi ; écritures regroupées, immédiates à la fermeture, jamais deux à la fois, échec signalé ; reprise de la liste et de la position ; titre de la fenêtre. |
+| JavaScript | `npm test` | `webamp-host.js` avec un faux Webamp : options, adresses créées, gardées pendant l'arrivée d'un lot, rendues à la sortie de la liste, au remplacement et à `dispose`, rapports dédoublonnés, événements ; « Load list » et « Save list » (morceaux avec clé, titre, durée, morceaux sans clé comptés), durée d'une liste donnée à Webamp ; skins au démarrage (`availableSkins`, `initialSkin`), ajout trié et mis, remplacement, adresses rendues. `webamp-skins.js` avec un faux menu : entrées reconnues par leur place, « Load Skin… » pris à Webamp, annulation, choix rapportés, dépôt d'un skin. ; Media Session, disposition et réglages remis avant la première image, état lu, changements signalés (l'horloge par pas de 5 s), reprise en pause à une position, raccourcis seulement avec le focus (écouteur de Webamp capturé), Milkdrop chargé à la première ouverture. |
+| E2E (Playwright) | `npm run test:e2e` après le build Release | Webamp s'ouvre depuis le menu Applications dans sa fenêtre, sans « Add URL » ; un `.mp3` mis dans `~` par l'explorateur et ouvert par `launch ca.kazo.webamp /home/neo/tone.mp3` joue avec ses étiquettes, et le bouton fermer de Webamp ferme la fenêtre de l'OS ; un fichier absent est signalé ; « Save list » enregistre `mix.m3u8` par la boîte de l'OS, « New list » vide Webamp et « Load list » le remplit à nouveau ; un `.m3u` ouvert joue son morceau et signale le fichier manquant et l'adresse web. Skins (`skins.e2e.mjs`, skins fabriqués par `fixtures/make-skin.mjs`) : la notification au premier lancement, un `.wsz` ouvert par `launch` dans Webamp déjà ouvert est mis et listé dans le menu Skins ; « Load Skin… » met un skin et le garde, un skin cassé est refusé par une boîte de message et le skin reste, Webamp rouvert démarre avec le skin et sans nouvelle notification. ; titre « Kazo Test - Tone 440 - Webamp » dans la barre des tâches, puis après un rechargement de la page Webamp revient avec sa liste, en pause, avec le même volume et repeat ; les raccourcis de Webamp ne font rien quand l'explorateur a le focus et agissent quand Webamp l'a ; Butterchurn n'est téléchargé qu'à l'ouverture de Milkdrop (`state.e2e.mjs`). |
 
 Le `.mp3` de test (`tests/e2e/fixtures/tone.mp3`, 4 s, 16 Ko) est fabriqué par
 `tests/e2e/fixtures/make-tone.sh` (ffmpeg) et validé dans le dépôt ;
@@ -298,4 +349,5 @@ Le `.mp3` de test (`tests/e2e/fixtures/tone.mp3`, 4 s, 16 Ko) est fabriqué par
 | --- | --- |
 | 1. `webamp/1-solution` | Solution, manifeste, fenêtre, `WebampPlayer`, `TrackLibrary`, module JavaScript. |
 | 3. `webamp/3-playlists` | Listes de lecture : lire, écrire, ouvrir, « Load list », « Save list ». |
+| 4. `webamp/4-skins` | Skins : type `.wsz`, dossier des skins, « Load Skin… », skin retenu, explication de l'import. |
 | 5. `webamp/5-state-and-media` | État retenu, titre de la fenêtre, Media Session, raccourcis avec le focus, Milkdrop paresseux. |

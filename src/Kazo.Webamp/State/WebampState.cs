@@ -6,23 +6,23 @@ namespace Kazo.Webamp.State;
 /// </summary>
 /// <remarks>
 /// <see cref="WebampStateJson"/> reads and writes it; a value out of range is brought back into its
-/// range when the file is read, so a hand-edited file never breaks Webamp.
+/// range when the file is read, so a hand-edited file never breaks Webamp. The skin in use is not
+/// here: the skins work item keeps it in <c>~/.config/ca.kazo.webamp/skins.json</c>
+/// (<see cref="Skins.SkinSettings"/>).
 /// </remarks>
 /// <param name="Tracks">The files of the list, in order, absolute paths. A file that has disappeared stays in it.</param>
 /// <param name="CurrentTrack">Index in <paramref name="Tracks"/> of the current track, or <see langword="null"/>.</param>
 /// <param name="Player">Volume, balance, equalizer, windows: what Webamp itself holds.</param>
-/// <param name="Skin">The skin file applied, or <see langword="null"/> for Webamp's default skin.</param>
 public sealed record WebampState(
     IReadOnlyList<string> Tracks,
     int? CurrentTrack,
-    PlayerSettings Player,
-    string? Skin)
+    PlayerSettings Player)
 {
     /// <summary>The version written in the file; another version is read as an empty state.</summary>
     public const int FormatVersion = 1;
 
     /// <summary>Gets the state of a first run: empty list, Webamp's own defaults.</summary>
-    public static WebampState Empty { get; } = new([], null, PlayerSettings.Default, null);
+    public static WebampState Empty { get; } = new([], null, PlayerSettings.Default);
 }
 
 /// <summary>What Webamp itself holds and the host module reads and restores (doc/en/architecture.md, "State").</summary>

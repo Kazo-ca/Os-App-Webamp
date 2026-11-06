@@ -59,24 +59,32 @@ public sealed class WebampApp : AppDefinition
         // ~/.config/ca.kazo.webamp/ (the state of work item 5).
         AppCapabilities.FileSystemPrivateRead,
         AppCapabilities.FileSystemPrivateWrite,
-        // "Save list" writes a .m3u8 where the user chose (work item 3).
+        // Work items 3 and 4: "Save list" writes a .m3u8 where the user chose, and skins opened or
+        // loaded are copied to ~/.local/share/webamp/skins/ (decisions 10 and 11).
         AppCapabilities.FileSystemUserHomeWrite,
         // "Load list" and "Save list" of Webamp open the OS dialogs (work item 3).
         AppCapabilities.DialogFileOpen,
         AppCapabilities.DialogFileSave,
+        // The first launch explains how to import a skin (work item 4, decision 20).
+        AppCapabilities.NotificationsPost,
     ];
 
     /// <inheritdoc />
     /// <remarks>
     /// Work item 3: playlists. Opening one adds its tracks to Webamp's list and plays the first one
-    /// (decisions 5 and 10).
+    /// (decisions 5 and 10). Work item 4: Winamp 2 skins; opening one puts it on and keeps it in the
+    /// Skins menu (decision 11).
     /// </remarks>
     public override IReadOnlyList<FileHandler> FileHandlers =>
     [
         new(PlaylistFormats.M3uMediaType, [".m3u"], ["open"]),
         new(PlaylistFormats.M3u8MediaType, [".m3u8"], ["open"]),
         new(PlaylistFormats.PlsMediaType, [".pls"], ["open"]),
+        new(SkinMediaType, [".wsz"], ["open"]),
     ];
+
+    /// <summary>Media type of a Winamp 2 skin (<c>.wsz</c>).</summary>
+    public const string SkinMediaType = "application/x-winamp-skin";
 
     /// <inheritdoc />
     public override IReadOnlyList<string> Icons => ["icons/app.svg"];
