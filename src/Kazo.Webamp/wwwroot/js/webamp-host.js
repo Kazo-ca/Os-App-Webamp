@@ -90,6 +90,82 @@ export function lazyButterchurn(butterchurnOpen, loaders = {}) {
     return gate;
 }
 
+/** Size of a Webamp window at normal size, and of one resize step (Webamp 2.3.1, Winamp 2). */
+const WINDOW_WIDTH = 275;
+const WINDOW_HEIGHT = 116;
+const SHADE_HEIGHT = 14;
+const RESIZE_STEP = { width: 25, height: 29 };
+
+/**
+ * The box a window of Webamp covers in its store's state, as Webamp draws it.
+ * @param {string} id Window id (WINDOW_IDS).
+ * @param {object} w The window in `state.windows.genWindows`.
+ * @param {boolean} doubled Whether the double size mode is on (main window and equalizer only).
+ * @returns {{ left: number, top: number, right: number, bottom: number }}
+ */
+export function windowBox(id, w, doubled) {
+    const [extraWidth, extraHeight] = w.size ?? [0, 0];
+    let width = WINDOW_WIDTH;
+    let height = w.shade ? SHADE_HEIGHT : WINDOW_HEIGHT;
+    if (id === 'main' || id === 'equalizer') {
+        const scale = doubled ? 2 : 1;
+        width *= scale;
+        height *= scale;
+    } else {
+        width += extraWidth * RESIZE_STEP.width;
+        if (!w.shade) {
+            height += extraHeight * RESIZE_STEP.height;
+        }
+    }
+    const left = w.position?.x ?? 0;
+    const top = w.position?.y ?? 0;
+    return { left, top, right: left + width, bottom: top + height };
+}
+
+/**
+ * Where Milkdrop goes when its window opens over Webamp's other windows: Webamp 2.3.1 leaves it at
+ * 0,0, on top of the main window. Like Winamp, it goes to the right of the other windows when the
+ * app's window has room for it, else below them, else in the playlist's place (below the main window
+ * and the equalizer), so that it stays visible and leaves the player's buttons free.
+ * @param {object} state Webamp's store state.
+ * @param {{ left: number, top: number, right: number, bottom: number }} [surface] The visible part of
+ *        the element Webamp renders into, in the coordinates of the store's positions (Webamp centers
+ *        its windows in the element); by default, Webamp's own idea of it (`browserWindowSize`).
+ * @returns {{ x: number, y: number } | null} The new position, or null when Milkdrop overlaps nothing.
+ */
+export function milkdropPlacement(state, surface = undefined) {
+    const windows = state.windows.genWindows;
+    const doubled = state.display?.doubled === true;
+    const milkdrop = windowBox('milkdrop', windows.milkdrop, doubled);
+    const others = ['main', 'equalizer', 'playlist']
+        .filter(id => windows[id]?.open)
+        .map(id => ({ id, box: windowBox(id, windows[id], doubled) }));
+    const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    if (others.length === 0 || !others.some(o => overlaps(milkdrop, o.box))) {
+        return null;
+    }
+    const bounds = others.reduce((b, { box }) => ({
+        left: Math.min(b.left, box.left),
+        top: Math.min(b.top, box.top),
+        right: Math.max(b.right, box.right),
+        bottom: Math.max(b.bottom, box.bottom),
+    }), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
+    const width = milkdrop.right - milkdrop.left;
+    const height = milkdrop.bottom - milkdrop.top;
+    const size = state.windows.browserWindowSize ?? { width: 0, height: 0 };
+    const visible = surface ?? { left: 0, top: 0, right: size.width, bottom: size.height };
+    if (bounds.right + width <= visible.right) {
+        return { x: bounds.right, y: bounds.top };
+    }
+    if (bounds.bottom + height <= visible.bottom) {
+        return { x: bounds.left, y: bounds.bottom };
+    }
+    const top = others
+        .filter(o => o.id !== 'playlist')
+        .reduce((bottom, o) => Math.max(bottom, o.box.bottom), bounds.top);
+    return { x: bounds.left, y: top };
+}
+
 /**
  * The layout Webamp takes at creation (its `windowLayout` option) from the saved one.
  * @param {object | null | undefined} windows The saved windows (C# `WindowLayout`).
@@ -235,6 +311,7 @@ export async function createHost(element, callbacks, options = {}, deps = {}) {
         host.attachInterceptor(interceptor, deps.element);
     }
     await host.webamp.renderInto(element);
+    host._element = element;
     if (typeof element.addEventListener === 'function') {
         host.watchSkinMenu(element, deps.pickSkinFile);
     }
@@ -301,6 +378,8 @@ export class WebampHost {
         this._focused = false;
         this._lastTrack = undefined;
         this._lastState = '';
+        /** Whether Milkdrop's window was open at the last store change (open at start: kept as saved). */
+        this._milkdropOpen = webamp.store.getState().windows?.genWindows?.milkdrop?.open === true;
         this._onKeyDown = event => {
             if (this._focused && !this._disposed) {
                 for (const listener of this._hotkeys) {
@@ -633,15 +712,53 @@ export class WebampHost {
         }
         this._playlistMayHaveChanged();
         this._trackMayHaveChanged();
-        if (this._butterchurn && !this._butterchurn.requested
-            && this.webamp.store.getState().windows.genWindows.milkdrop?.open) {
-            this._butterchurn.open();
-        }
+        this._milkdropMayHaveOpened();
         const signature = this._stateSignature();
         if (signature !== this._lastState) {
             this._lastState = signature;
             this._callbacks.onStateChanged?.();
         }
+    }
+
+    // Milkdrop's window just opened: Butterchurn is loaded the first time (decision 12), and the
+    // window moves off the others when Webamp left it over them (milkdropPlacement).
+    _milkdropMayHaveOpened() {
+        const state = this.webamp.store.getState();
+        const open = state.windows.genWindows.milkdrop?.open === true;
+        const opened = open && this._milkdropOpen === false;
+        this._milkdropOpen = open;
+        if (open && this._butterchurn && !this._butterchurn.requested) {
+            this._butterchurn.open();
+        }
+        if (opened) {
+            const position = milkdropPlacement(state, this._visibleSurface(state));
+            if (position != null) {
+                this.webamp.store.dispatch({ type: 'UPDATE_WINDOW_POSITIONS', positions: { milkdrop: position }, absolute: false });
+            }
+        }
+    }
+
+    // The element Webamp renders into, in the coordinates of its store's positions: Webamp draws its
+    // windows shifted (centered in the element), so the shift is read from one open window's place on
+    // the page. Undefined without a page (node tests).
+    _visibleSurface(state) {
+        const element = this._element;
+        if (typeof element?.getBoundingClientRect !== 'function' || typeof element.querySelector !== 'function') {
+            return undefined;
+        }
+        const surface = element.getBoundingClientRect();
+        for (const id of ['main', 'equalizer', 'playlist']) {
+            const w = state.windows.genWindows[id];
+            const drawn = w?.open ? element.querySelector(`#${id}-window`) : null;
+            if (drawn == null) {
+                continue;
+            }
+            const rect = drawn.getBoundingClientRect();
+            const shiftX = rect.left - surface.left - w.position.x;
+            const shiftY = rect.top - surface.top - w.position.y;
+            return { left: -shiftX, top: -shiftY, right: surface.width - shiftX, bottom: surface.height - shiftY };
+        }
+        return undefined;
     }
 
     // What is saved, without the clock: while playing, the position counts in steps of

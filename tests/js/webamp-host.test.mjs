@@ -2,7 +2,7 @@
 // fake Webamp: the options, the Blob addresses (created, kept while listed, given back), the events.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FilePromptInterceptor, classifyFilePrompt, constructCapturingHotkeys, createHost, lazyButterchurn, ownsTarget, toWindowLayout, trackTitle, webampOptions } from '../../src/Kazo.Webamp/wwwroot/js/webamp-host.js';
+import { FilePromptInterceptor, classifyFilePrompt, constructCapturingHotkeys, createHost, lazyButterchurn, milkdropPlacement, ownsTarget, toWindowLayout, trackTitle, webampOptions, windowBox } from '../../src/Kazo.Webamp/wwwroot/js/webamp-host.js';
 
 /** Just enough of Webamp 2.3.1's public API and store, notifying on every change. */
 class FakeWebamp {
@@ -28,6 +28,7 @@ class FakeWebamp {
             display: { doubled: options.enableDoubleSizeMode === true },
             windows: {
                 positionsAreRelative: true,
+                browserWindowSize: { width: 275, height: 348 },
                 genWindows: {
                     main: { position: { x: 0, y: 0 }, open: true, shade: false, size: [0, 0] },
                     equalizer: { position: { x: 0, y: 116 }, open: true, shade: false, size: [0, 0] },
@@ -713,4 +714,63 @@ test('dispose gives the skins\' addresses back too', async () => {
     assert.deepEqual(urls.revoked.sort(), ['blob:test/1', 'blob:test/2']);
     await host.addSkin(skin('Late.wsz'), true);
     assert.deepEqual(host.skinKeys(), []);
+});
+
+// Webamp's state for milkdropPlacement: the three windows stacked at 0,0, Milkdrop at 0,0.
+const layout = (surface, changes = {}) => ({
+    display: { doubled: false },
+    windows: {
+        browserWindowSize: surface,
+        genWindows: {
+            main: { position: { x: 0, y: 0 }, open: true, shade: false, size: [0, 0] },
+            equalizer: { position: { x: 0, y: 116 }, open: true, shade: false, size: [0, 0] },
+            playlist: { position: { x: 0, y: 232 }, open: true, shade: false, size: [0, 0] },
+            milkdrop: { position: { x: 0, y: 0 }, open: true, shade: false, size: [0, 0] },
+            ...changes,
+        },
+    },
+});
+
+test('windowBox follows resize steps, shade mode and double size', () => {
+    assert.deepEqual(windowBox('playlist', { position: { x: 10, y: 20 }, size: [2, 3] }, false), { left: 10, top: 20, right: 335, bottom: 223 });
+    assert.deepEqual(windowBox('main', { position: { x: 0, y: 0 }, size: [0, 0] }, true), { left: 0, top: 0, right: 550, bottom: 232 });
+    assert.deepEqual(windowBox('equalizer', { position: { x: 0, y: 0 }, shade: true, size: [0, 0] }, false), { left: 0, top: 0, right: 275, bottom: 14 });
+});
+
+test('Milkdrop goes to the right of the other windows when the surface has room', () => {
+    assert.deepEqual(milkdropPlacement(layout({ width: 800, height: 348 })), { x: 275, y: 0 });
+});
+
+test('Milkdrop goes below the other windows when only the height has room', () => {
+    assert.deepEqual(milkdropPlacement(layout({ width: 275, height: 600 })), { x: 0, y: 348 });
+});
+
+test('Milkdrop takes the playlist place when the surface has no room', () => {
+    assert.deepEqual(milkdropPlacement(layout({ width: 275, height: 348 })), { x: 0, y: 232 });
+});
+
+test('Milkdrop placed away from the other windows stays where it is', () => {
+    const state = layout({ width: 800, height: 600 }, { milkdrop: { position: { x: 300, y: 0 }, open: true, shade: false, size: [0, 0] } });
+    assert.equal(milkdropPlacement(state), null);
+});
+
+test('Opening Milkdrop over the main window moves it off', async () => {
+    const { webamp } = await start();
+    webamp.openWindow('milkdrop');
+    assert.deepEqual(webamp.s.windows.genWindows.milkdrop.position, { x: 0, y: 232 });
+    const moves = webamp.dispatched.filter(action => action.type === 'UPDATE_WINDOW_POSITIONS');
+    assert.equal(moves.length, 1);
+    assert.equal(moves[0].absolute, false);
+});
+
+test('Milkdrop open in the saved layout keeps its saved place', async () => {
+    const { webamp } = await start({ settings: { ...saved, windows: { ...saved.windows, milkdrop: { ...saved.windows.milkdrop, open: true } } } });
+    webamp.openWindow('milkdrop');
+    assert.equal(webamp.dispatched.filter(action => action.type === 'UPDATE_WINDOW_POSITIONS' && action.absolute === false).length, 0);
+});
+
+test('Milkdrop placement uses the visible surface, in the coordinates of the store', () => {
+    // Webamp shifted its windows by 22 px (centered in a 318 px element): no room on the right.
+    assert.deepEqual(milkdropPlacement(layout({ width: 1280, height: 800 }), { left: -22, top: 0, right: 296, bottom: 348 }), { x: 0, y: 232 });
+    assert.deepEqual(milkdropPlacement(layout({ width: 0, height: 0 }), { left: -22, top: 0, right: 600, bottom: 348 }), { x: 275, y: 0 });
 });
