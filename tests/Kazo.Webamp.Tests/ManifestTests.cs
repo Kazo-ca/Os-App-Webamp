@@ -27,12 +27,28 @@ public sealed class ManifestTests
     }
 
     [Fact]
-    public void The_app_asks_only_for_the_base_capabilities_none_dangerous()
+    public void The_app_asks_only_for_the_capabilities_it_uses_none_dangerous()
     {
         Assert.Equal(
-            new[] { AppCapabilities.FileSystemUserHomeRead, AppCapabilities.FileSystemPrivateRead, AppCapabilities.FileSystemPrivateWrite },
+            new[]
+            {
+                AppCapabilities.FileSystemUserHomeRead, AppCapabilities.FileSystemPrivateRead, AppCapabilities.FileSystemPrivateWrite,
+                AppCapabilities.FileSystemUserHomeWrite, AppCapabilities.DialogFileOpen, AppCapabilities.DialogFileSave,
+            },
             _app.Capabilities);
         Assert.DoesNotContain(AppCapabilities.FileSystemSystemRead, _app.Capabilities);
+        Assert.DoesNotContain(AppCapabilities.FileSystemSystemWrite, _app.Capabilities);
+    }
+
+    [Theory]
+    [InlineData("audio/x-mpegurl", ".m3u")]
+    [InlineData("application/vnd.apple.mpegurl", ".m3u8")]
+    [InlineData("audio/x-scpls", ".pls")]
+    public void The_app_opens_the_three_playlist_formats(string mediaType, string extension)
+    {
+        FileHandler handler = Assert.Single(_app.FileHandlers, handler => handler.MediaType == mediaType);
+        Assert.Equal(new[] { extension }, handler.Extensions);
+        Assert.Equal(new[] { "open" }, handler.Actions);
     }
 
     [Fact]

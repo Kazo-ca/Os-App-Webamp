@@ -1,5 +1,6 @@
 using Kazo.Os.App.Abstractions;
 using Kazo.Os.AppSdk.IO;
+using Kazo.Webamp.Playlists;
 
 namespace Kazo.Webamp.Tracks;
 
@@ -68,9 +69,20 @@ public sealed class TrackLibrary
     /// <param name="play">Whether the first file read starts playing.</param>
     /// <param name="cancellationToken">Cancels the reads.</param>
     /// <returns>The files added and the ones that could not be read.</returns>
-    public async Task<TrackLoadResult> AddAsync(IReadOnlyList<VirtualPath> paths, bool play, CancellationToken cancellationToken = default)
+    public Task<TrackLoadResult> AddAsync(IReadOnlyList<VirtualPath> paths, bool play, CancellationToken cancellationToken = default) =>
+        AddAsync(ToEntries(paths), play, cancellationToken);
+
+    /// <summary>
+    /// Adds the tracks of a playlist at the end of Webamp's list, in order: the title and the
+    /// duration written in the list are what Webamp shows until it reads the file's tags.
+    /// </summary>
+    /// <param name="entries">The tracks.</param>
+    /// <param name="play">Whether the first track read starts playing.</param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>The files added and the ones that could not be read.</returns>
+    public async Task<TrackLoadResult> AddAsync(IReadOnlyList<PlaylistEntry> entries, bool play, CancellationToken cancellationToken = default)
     {
-        (List<TrackData> tracks, TrackLoadResult result) = await ReadAsync(paths, cancellationToken);
+        (List<TrackData> tracks, TrackLoadResult result) = await ReadAsync(entries, cancellationToken);
         if (tracks.Count > 0)
         {
             // Known before Webamp hears of them: its list changes are reported while it adds them.
@@ -100,10 +112,21 @@ public sealed class TrackLibrary
     /// <param name="play">Whether the first file read starts playing.</param>
     /// <param name="cancellationToken">Cancels the reads.</param>
     /// <returns>The files now in the list and the ones that could not be read.</returns>
-    public async Task<TrackLoadResult> ReplaceAsync(IReadOnlyList<VirtualPath> paths, bool play, CancellationToken cancellationToken = default)
+    public Task<TrackLoadResult> ReplaceAsync(IReadOnlyList<VirtualPath> paths, bool play, CancellationToken cancellationToken = default) =>
+        ReplaceAsync(ToEntries(paths), play, cancellationToken);
+
+    /// <summary>
+    /// Replaces Webamp's list with the tracks of a playlist ("Load list"). When none can be read the
+    /// list stays as it was.
+    /// </summary>
+    /// <param name="entries">The tracks.</param>
+    /// <param name="play">Whether the first track read starts playing.</param>
+    /// <param name="cancellationToken">Cancels the reads.</param>
+    /// <returns>The files now in the list and the ones that could not be read.</returns>
+    public async Task<TrackLoadResult> ReplaceAsync(IReadOnlyList<PlaylistEntry> entries, bool play, CancellationToken cancellationToken = default)
     {
-        (List<TrackData> tracks, TrackLoadResult result) = await ReadAsync(paths, cancellationToken);
-        if (tracks.Count == 0 && paths.Count > 0)
+        (List<TrackData> tracks, TrackLoadResult result) = await ReadAsync(entries, cancellationToken);
+        if (tracks.Count == 0 && entries.Count > 0)
         {
             return result;
         }
@@ -152,19 +175,43 @@ public sealed class TrackLibrary
         }
     }
 
-    private async Task<(List<TrackData> Tracks, TrackLoadResult Result)> ReadAsync(IReadOnlyList<VirtualPath> paths, CancellationToken cancellationToken)
+    /// <summary>Returns the file of a track of Webamp's list, from the key the host module reported.</summary>
+    /// <param name="key">A key of <see cref="OnPlaylistChanged"/>.</param>
+    /// <param name="path">The file, when the key is one of the library's.</param>
+    /// <returns>Whether the key is one of the library's (a track dropped from the computer is not).</returns>
+    public bool TryGetPath(string key, out VirtualPath path)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        bool found = _entries.TryGetValue(key, out Entry entry);
+        path = entry.Path;
+        return found;
+    }
+
+    private static PlaylistEntry[] ToEntries(IReadOnlyList<VirtualPath> paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
+        return [.. paths.Select(path => new PlaylistEntry(path))];
+    }
+
+    private async Task<(List<TrackData> Tracks, TrackLoadResult Result)> ReadAsync(IReadOnlyList<PlaylistEntry> entries, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
         List<TrackData> tracks = [];
         List<VirtualPath> added = [];
         List<TrackLoadFailure> failures = [];
-        foreach (VirtualPath path in paths)
+        foreach (PlaylistEntry source in entries)
         {
+            VirtualPath path = source.Path;
             try
             {
                 byte[] bytes = await _readAllBytes(path.Value, cancellationToken);
-                string name = KazoPath.GetFileName(path.Value) ?? path.Value;
-                tracks.Add(new TrackData($"t{++_nextKey}", name, AudioMediaTypes.ForFile(name), bytes));
+                string fileName = KazoPath.GetFileName(path.Value) ?? path.Value;
+                tracks.Add(new TrackData(
+                    $"t{++_nextKey}",
+                    source.Title ?? fileName,
+                    AudioMediaTypes.ForFile(fileName),
+                    bytes,
+                    source.Duration?.TotalSeconds));
                 added.Add(path);
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)

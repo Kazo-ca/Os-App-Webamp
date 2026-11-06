@@ -51,6 +51,15 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
     /// </summary>
     public event Action? StateChanged;
 
+    /// <summary>Raised when the user chose "Load list" in Webamp (decision 10: the OS dialog opens).</summary>
+    public event Func<Task>? LoadListRequested;
+
+    /// <summary>
+    /// Raised when the user chose "Save list" in Webamp, with the tracks C# gave it, in its order,
+    /// and how many other tracks (dropped from the computer, without a file in Kazo OS) are left out.
+    /// </summary>
+    public event Func<IReadOnlyList<WebampListEntry>, int, Task>? SaveListRequested;
+
     /// <summary>Gets whether Webamp is on screen.</summary>
     public bool IsStarted => _host is not null;
 
@@ -131,6 +140,17 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
     [JSInvokable]
     public void OnPlaylistChanged(string[] keys) => PlaylistChanged?.Invoke(keys);
 
+    /// <summary>Called by the host module when "Load list" was chosen.</summary>
+    [JSInvokable]
+    public Task OnLoadListRequested() => LoadListRequested?.Invoke() ?? Task.CompletedTask;
+
+    /// <summary>Called by the host module when "Save list" was chosen.</summary>
+    /// <param name="entries">The tracks of the list that have a key, in order.</param>
+    /// <param name="unsaved">How many tracks of the list have no key.</param>
+    [JSInvokable]
+    public Task OnSaveListRequested(WebampListEntry[] entries, int unsaved) =>
+        SaveListRequested?.Invoke(entries, unsaved) ?? Task.CompletedTask;
+
     /// <summary>Stops the music, removes Webamp and gives its memory back (decision 8).</summary>
     public async ValueTask DisposeAsync()
     {
@@ -164,5 +184,5 @@ public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
 
     // byte[] crosses to JavaScript as a Uint8Array.
     private static object[] ToJs(IReadOnlyList<TrackData> tracks) =>
-        [.. tracks.Select(track => new { key = track.Key, name = track.Name, mimeType = track.MimeType, bytes = track.Bytes })];
+        [.. tracks.Select(track => new { key = track.Key, name = track.Name, mimeType = track.MimeType, bytes = track.Bytes, durationSeconds = track.DurationSeconds })];
 }

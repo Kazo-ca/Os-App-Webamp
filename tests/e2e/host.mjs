@@ -12,6 +12,9 @@ const hostProject = path.join(root, 'src', 'Kazo.Webamp.Os');
 /** The test track: four seconds of a 440 Hz tone, tagged "Kazo Test - Tone 440" (fixtures/make-tone.sh). */
 export const TONE = path.join(root, 'tests', 'e2e', 'fixtures', 'tone.mp3');
 
+/** A .m3u next to the tone: the tone, a missing file and a web address (fixtures/tones.m3u). */
+export const TONES_LIST = path.join(root, 'tests', 'e2e', 'fixtures', 'tones.m3u');
+
 // The first WebAssembly boot downloads and compiles the whole OS: give it time.
 export const BOOT_TIMEOUT_MS = 120_000;
 
@@ -95,8 +98,22 @@ export async function uploadToHome(page, file) {
     await openApp(page, 'File Explorer');
     const input = page.locator('input[type=file]').first();
     await input.waitFor({ state: 'attached', timeout: 30_000 });
-    await input.setInputFiles(file);
-    await page.getByText(path.basename(file), { exact: true }).first().waitFor({ timeout: 30_000 });
+    // The input is in the page before the explorer has listed ~ and wired its change handler: a
+    // file set that early is lost. Wait for the listing (the home folders), and set the file again
+    // if it still does not show.
+    await page.getByText('Documents', { exact: true }).first().waitFor({ timeout: 30_000 });
+    const shown = page.getByText(path.basename(file), { exact: true }).first();
+    for (let attempt = 0; ; attempt++) {
+        await input.setInputFiles(file);
+        try {
+            await shown.waitFor({ timeout: 15_000 });
+            return;
+        } catch (error) {
+            if (attempt === 1) {
+                throw error;
+            }
+        }
+    }
 }
 
 /**

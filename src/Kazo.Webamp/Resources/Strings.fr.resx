@@ -12,11 +12,41 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="ActionFailed" xml:space="preserve">
+    <value>Webamp n’a pas pu le faire : {0}</value>
+  </data>
+  <data name="AllFiles" xml:space="preserve">
+    <value>Tous les fichiers</value>
+  </data>
+  <data name="DefaultListName" xml:space="preserve">
+    <value>liste</value>
+  </data>
+  <data name="Dismiss" xml:space="preserve">
+    <value>Fermer le message</value>
+  </data>
   <data name="FileFailed" xml:space="preserve">
     <value>{0} n’a pas pu être lu : {1}</value>
   </data>
+  <data name="ListEmpty" xml:space="preserve">
+    <value>{0} n’a aucun morceau que Webamp peut lire : la liste reste comme elle était.</value>
+  </data>
+  <data name="ListSaved" xml:space="preserve">
+    <value>{0} enregistrée.</value>
+  </data>
+  <data name="LoadListTitle" xml:space="preserve">
+    <value>Charger une liste de lecture</value>
+  </data>
   <data name="Loading" xml:space="preserve">
     <value>Démarrage de Webamp…</value>
+  </data>
+  <data name="M3u8Filter" xml:space="preserve">
+    <value>Liste de lecture (.m3u8)</value>
+  </data>
+  <data name="MoreFailed" xml:space="preserve">
+    <value>{0} autre(s) fichier(s) n’ont pas pu être lus non plus.</value>
+  </data>
+  <data name="PathsUnresolved" xml:space="preserve">
+    <value>{0} emplacement(s) de la liste ne sont pas un chemin de Kazo OS, par exemple {1} : laissé(s) de côté.</value>
   </data>
   <data name="PlayerLabel" xml:space="preserve">
     <value>Lecteur de musique Webamp</value>
@@ -24,7 +54,22 @@
   <data name="StateSaveFailed" xml:space="preserve">
     <value>Webamp n'a pas pu enregistrer son état : {0}</value>
   </data>
+  <data name="PlaylistFilter" xml:space="preserve">
+    <value>Listes de lecture (.m3u, .m3u8, .pls)</value>
+  </data>
+  <data name="SaveFailed" xml:space="preserve">
+    <value>{0} n’a pas pu être enregistrée : {1}</value>
+  </data>
+  <data name="SaveListTitle" xml:space="preserve">
+    <value>Enregistrer la liste de lecture</value>
+  </data>
   <data name="StartFailed" xml:space="preserve">
     <value>Webamp n’a pas pu démarrer : {0}</value>
+  </data>
+  <data name="TracksNotSaved" xml:space="preserve">
+    <value>{0} morceau(x) glissé(s) depuis l’ordinateur n’ont pas de fichier dans Kazo OS et n’y sont pas.</value>
+  </data>
+  <data name="UrlsIgnored" xml:space="preserve">
+    <value>{0} adresse(s) web de la liste laissée(s) de côté : Webamp lit seulement les fichiers de Kazo OS.</value>
   </data>
 </root>

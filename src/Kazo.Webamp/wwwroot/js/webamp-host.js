@@ -4,7 +4,7 @@
 // come from, what to play. This module only does what C# cannot reach: it creates the Webamp
 // instance inside the app's window, turns the bytes of a file into a Blob address Webamp can play,
 // gives that address back to the browser when the track leaves Webamp's list, and reports Webamp's
-// events (close, minimize, track change, list change, state change) to C#.
+// events (close, minimize, track change, list change, "Load list", "Save list", state change) to C#.
 //
 // Work item 5 adds: reading and restoring what Webamp holds (state.json, decision 13), the Media
 // Session (decision 8), Webamp's hotkeys only while the app's window has the focus (decision 17), and
@@ -119,7 +119,7 @@ export function toWindowLayout(windows) {
  * @param {object} [butterchurn] Webamp's `__butterchurnOptions` (`lazyButterchurn(...).options`).
  * @returns {object} Webamp options.
  */
-export function webampOptions(options = {}, butterchurn = undefined) {
+export function webampOptions(options = {}, callbacks = {}, butterchurn = undefined) {
     const settings = options.settings ?? null;
     return {
         // Webamp's hotkeys listen to the whole page: WebampHost captures that listener at creation
@@ -130,6 +130,13 @@ export function webampOptions(options = {}, butterchurn = undefined) {
         // No music from the internet in the first version: "Add URL" does nothing (its button is
         // hidden by WebampWindow.razor.css).
         handleAddUrlEvent: () => null,
+        // "Load list" and "Save list" go through the OS dialogs, run by C# (decision 10). Webamp
+        // gets null back: C# replaces the list itself, through replaceTracks.
+        handleLoadListEvent: async () => {
+            callbacks.onLoadList?.();
+            return null;
+        },
+        handleSaveListEvent: () => callbacks.onSaveList?.(),
         zIndex: options.zIndex ?? 0,
         enableDoubleSizeMode: settings?.doubleSize === true,
         windowLayout: toWindowLayout(settings?.windows),
@@ -170,7 +177,9 @@ export function constructCapturingHotkeys(Webamp, options, doc) {
  * Creates the host of one Webamp window.
  * @param {HTMLElement} element The element Webamp renders into.
  * @param {{ onClose?: () => void, onMinimize?: () => void, onTrackChanged?: (track: object | null) => void,
- *           onPlaylistChanged?: (keys: string[]) => void, onStateChanged?: () => void }} callbacks What C# hears.
+ *           onPlaylistChanged?: (keys: string[]) => void, onLoadList?: () => void,
+ *           onSaveList?: (entries: { key: string, title: string | null, duration: number | null }[], unsaved: number) => void,
+ *           onStateChanged?: () => void }} callbacks What C# hears.
  * @param {{ zIndex?: number, settings?: object | null, focused?: boolean }} [options] Options from C#:
  *        `settings` is the saved C# `PlayerSettings` (or null on a first run).
  * @param {{ Webamp?: Function, createObjectURL?: (blob: Blob) => string, revokeObjectURL?: (url: string) => void,
@@ -179,11 +188,21 @@ export function constructCapturingHotkeys(Webamp, options, doc) {
  */
 export async function createHost(element, callbacks, options = {}, deps = {}) {
     const Webamp = deps.Webamp ?? await loadWebamp();
+    let host = null;
+    const listCallbacks = {
+        onLoadList: () => callbacks.onLoadList?.(),
+        onSaveList: () => {
+            if (host !== null) {
+                const entries = host.playlistEntries();
+                callbacks.onSaveList?.(entries, host.webamp.getPlaylistTracks().length - entries.length);
+            }
+        },
+    };
     const settings = options.settings ?? null;
     const butterchurn = lazyButterchurn(settings?.windows?.milkdrop?.open === true, deps.loaders);
     const doc = 'document' in deps ? deps.document : globalThis.document;
-    const { webamp, hotkeys } = constructCapturingHotkeys(Webamp, webampOptions(options, butterchurn.options), doc);
-    const host = new WebampHost(webamp, callbacks, {
+    const { webamp, hotkeys } = constructCapturingHotkeys(Webamp, webampOptions(options, listCallbacks, butterchurn.options), doc);
+    host = new WebampHost(webamp, callbacks, {
         createObjectURL: deps.createObjectURL ?? (blob => URL.createObjectURL(blob)),
         revokeObjectURL: deps.revokeObjectURL ?? (url => URL.revokeObjectURL(url)),
     }, { hotkeys, document: doc, butterchurn });
@@ -212,6 +231,8 @@ export function create(element, dotNet, options = {}) {
         onMinimize: () => send('OnWebampMinimized'),
         onTrackChanged: track => send('OnTrackChanged', track),
         onPlaylistChanged: keys => send('OnPlaylistChanged', keys),
+        onLoadList: () => send('OnLoadListRequested'),
+        onSaveList: (entries, unsaved) => send('OnSaveListRequested', entries, unsaved),
         onStateChanged: () => send('OnStateChanged'),
     }, options);
 }
@@ -447,6 +468,21 @@ export class WebampHost {
             .filter(key => key !== undefined);
     }
 
+    /**
+     * The tracks of Webamp's list that C# gave it, with what Webamp knows of them, for "Save list".
+     * Tracks dropped from the computer have no file in Kazo OS: they are left out.
+     * @returns {{ key: string, title: string | null, duration: number | null }[]}
+     */
+    playlistEntries() {
+        return this.webamp.getPlaylistTracks()
+            .filter(track => this._keysByUrl.has(track.url))
+            .map(track => ({
+                key: this._keysByUrl.get(track.url),
+                title: trackTitle(track),
+                duration: typeof track.duration === 'number' && Number.isFinite(track.duration) ? track.duration : null,
+            }));
+    }
+
     /** @returns {number} How many Blob addresses this host still holds. */
     get heldAddresses() {
         return this._keysByUrl.size;
@@ -484,7 +520,12 @@ export class WebampHost {
         this._keysByUrl.set(url, track.key);
         // A URL track rather than a BlobTrack: given a Blob, Webamp creates the address itself and
         // never gives it back; this way the host gives it back when the track leaves the list.
-        return { url, defaultName: track.name };
+        const webampTrack = { url, defaultName: track.name };
+        if (typeof track.durationSeconds === 'number') {
+            // From a playlist: shown until Webamp reads the file.
+            webampTrack.duration = track.durationSeconds;
+        }
+        return webampTrack;
     }
 
     _storeChanged() {
@@ -571,4 +612,20 @@ export class WebampHost {
             this._callbacks.onPlaylistChanged?.(keys);
         }
     }
+}
+
+/**
+ * The title a list writes for a track: "Artist - Title" once Webamp read the tags (as Winamp
+ * writes it), the title alone, the name Webamp shows, or null (C# then writes the file name).
+ * @param {{ artist?: string | null, title?: string | null, defaultName?: string | null }} track A track of Webamp's state.
+ * @returns {string | null}
+ */
+export function trackTitle(track) {
+    const artist = track.artist?.trim();
+    const title = track.title?.trim();
+    if (artist && title) {
+        return `${artist} - ${title}`;
+    }
+    // No tags: the name Webamp shows (the playlist's title, or the file name).
+    return title || track.defaultName?.trim() || null;
 }
