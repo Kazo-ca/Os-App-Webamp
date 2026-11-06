@@ -4,4 +4,4 @@
 
 | Document | Contenu |
 | --- | --- |
-| [`plan.md`](plan.md) | Plan proposé : but, décisions, l'app, ordre des choses à faire, tests, licences. |
+| [`plan.md`](plan.md) | Plan validé : but, décisions, l'app, ordre des choses à faire, tests, licences, avancement. |

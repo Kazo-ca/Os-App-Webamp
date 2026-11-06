@@ -2,9 +2,9 @@
 
 # Plan : l'app Webamp pour Kazo OS
 
-Plan **proposé le 2026-11-06**, à valider par Benoit (fil « Concevoir l'app
-Webamp avec Benoit »). Ce document fixe le but, les décisions et l'ordre des
-choses à faire ; aucun code n'est écrit avant sa validation.
+Plan **validé le 2026-11-06** par Benoit (fil « Concevoir l'app Webamp avec
+Benoit », plan fusionné par la PR #2). Ce document fixe le but, les décisions et
+l'ordre des choses à faire ; l'avancement est en fin de page.
 
 ## But
 
@@ -26,7 +26,7 @@ Réponses de Benoit le 2026-11-06 (« ok » = la recommandation).
 | # | Sujet | Décision |
 | --- | --- | --- |
 | 1 | « Remote folder » | Le lecteur réseau de l'ADR 0181 : `/mnt/<nom>`, Chrome et Edge sur ordinateur. |
-| 2 | Accès à `/mnt` | Changement de l'OS : les lecteurs réseau de l'utilisateur comptent comme ses fichiers personnels (`filesystem.user-home.*`). [ADR 0231](https://github.com/Kazo-ca/Os/pull/382), issue [Os#381](https://github.com/Kazo-ca/Os/issues/381). Sur un OS qui ne l'a pas encore, un fichier de `/mnt` donne « Permission refusée ». |
+| 2 | Accès à `/mnt` | Changement de l'OS : les lecteurs réseau de l'utilisateur comptent comme ses fichiers personnels (`filesystem.user-home.*`). [ADR 0231](https://github.com/Kazo-ca/Os/blob/main/doc/fr/wasm/dev/adr/0231-network-drives-count-as-personal-files.md), issue [Os#381](https://github.com/Kazo-ca/Os/issues/381). Sur un OS qui ne l'a pas encore, un fichier de `/mnt` donne « Permission refusée ». |
 | 3 | Base du dépôt | Modèle `kazoos-solution` sur Kazo OS **3.0.0** maintenant (le dépôt est vide, rien à migrer) ; le sous-module avance à la version qui apporte l'ADR 0231. |
 | 4 | Formats audio | `.mp3 .wav .ogg .oga .opus .flac .m4a .aac .weba` (ce que lisent les navigateurs). Aucune autre app de l'OS n'ouvre l'audio : Webamp devient l'app par défaut. |
 | 5 | Ouvrir quand Webamp est ouvert | Une seule fenêtre (`SingleInstancePerUser`). Ouvrir un fichier **l'ajoute à la liste et le joue** ; une sélection multiple s'ajoute en entier. Entrées du menu des fichiers : « Lire dans Webamp » et « Ajouter à la liste de Webamp » (fichiers et dossiers). |
@@ -44,7 +44,7 @@ Réponses de Benoit le 2026-11-06 (« ok » = la recommandation).
 | 17 | Raccourcis clavier | Ceux de Webamp seulement quand sa fenêtre a le focus (l'option `enableHotkeys` écoute toute la page et volerait les touches des autres apps). |
 | 18 | Identité | Id `ca.kazo.webamp`, nom « Webamp », éditeur `pub.kazo`, catégorie `multimedia`, version `1.0.0`, licence MIT. |
 | 19 | Documents | Ce plan dans ce dépôt (fr + en) ; l'ADR 0231 dans Kazo OS. |
-| 20 | Expliquer l'import d'un skin | **Question posée, en attente.** Recommandation : une notification au premier lancement (« Pour changer de skin : double-cliquez un fichier .wsz, ou clic droit ▸ Skins ▸ Load Skin… ») et la même explication dans la fiche du Kazo OS Store et le README. |
+| 20 | Expliquer l'import d'un skin | Recommandation retenue (Benoit a lancé l'implémentation sans autre choix) : une notification au premier lancement (« Pour changer de skin : double-cliquez un fichier .wsz, ou clic droit ▸ Skins ▸ Load Skin… ») et la même explication dans la fiche du Kazo OS Store et le README. |
 
 ## L'app
 
@@ -91,3 +91,20 @@ Comme Chess : tests C# (xUnit) pour les listes (`.m3u`, `.m3u8`, `.pls`, chemins
 - Adresse de fichier servie à la demande (sans copie en mémoire) : [Os#379](https://github.com/Kazo-ca/Os/issues/379).
 - Glisser des fichiers de l'explorateur vers Webamp : [Os#380](https://github.com/Kazo-ca/Os/issues/380).
 - Mobile.
+
+## Avancement
+
+Le 2026-11-06, Benoit a lancé l'implémentation en plusieurs sessions en
+parallèle. Série `webamp/base` (créée depuis `main`), une PR par chantier vers
+`webamp/base`, puis une PR `webamp/base` → `main` que Benoit fusionne.
+
+| Chantier | Branche | Dépend de | État |
+| --- | --- | --- | --- |
+| Kazo OS : ADR 0231 codée ([Os#381](https://github.com/Kazo-ca/Os/issues/381)) | `network-drives/app-access` (dépôt Kazo-ca/Os, PR vers `main`) | rien | À faire |
+| 1. Solution, manifeste, fenêtre qui contient Webamp, chargement des morceaux en `Blob` | `webamp/1-solution` | rien | À faire |
+| 2. Ouvrir depuis l'OS : types audio, une seule fenêtre, ajouter et jouer, menus, dialogues, 1 Go | `webamp/2-open-files` | 1 | À faire |
+| 3. Listes `.m3u`, `.m3u8`, `.pls` | `webamp/3-playlists` | 1 | À faire |
+| 4. Skins `.wsz` et explication de l'import | `webamp/4-skins` | 1 | À faire |
+| 5. État retenu, titre, Media Session, raccourcis, Milkdrop | `webamp/5-state-and-media` | 1 | À faire |
+| 6. Fiche du Store, tests de bout en bout, `v1.0.0` | `webamp/6-store` | 2 à 5 | À faire |
+| 7. Sous-module sur la version de l'OS avec l'ADR 0231, essai sur `/mnt` | `webamp/7-network-drive` | Os#381 publiée, 1 | À faire |
