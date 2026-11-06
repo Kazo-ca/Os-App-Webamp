@@ -5,6 +5,9 @@
     <div class="webamp-surface" @ref="_surface"></div>
     @if (_status is not null)
     {
-        <p class="app-status @(_failed ? "failed" : string.Empty)" role="@(_failed ? "alert" : "status")">@_status</p>
+        <div class="app-status @(_failed ? "failed" : string.Empty)" role="@(_failed ? "alert" : "status")">
+            <span class="app-status-text">@_status</span>
+            <button type="button" class="app-status-dismiss" aria-label="@L["Dismiss"]" @onclick="Dismiss">×</button>
+        </div>
     }
 </div>

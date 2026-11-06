@@ -101,7 +101,7 @@ Series `webamp/base` (created from `main`), one PR per work item to
 | Kazo OS: ADR 0231 coded ([Os#381](https://github.com/Kazo-ca/Os/issues/381)) | `network-drives/app-access` (Kazo-ca/Os repository, PR to `main`) | nothing | To do |
 | 1. Solution, manifest, window that contains Webamp, tracks loaded as `Blob`s | `webamp/1-solution` | nothing | Done ([architecture](architecture.md)) |
 | 2. Open from the OS: audio types, one window, add and play, menus, dialogs, 1 GB | `webamp/2-open-files` | 1 | To do |
-| 3. `.m3u`, `.m3u8`, `.pls` lists | `webamp/3-playlists` | 1 | To do |
+| 3. `.m3u`, `.m3u8`, `.pls` lists | `webamp/3-playlists` | 1 | Done ([architecture](architecture.md#playlists)) |
 | 4. `.wsz` skins and the import explanation | `webamp/4-skins` | 1 | To do |
 | 5. Remembered state, title, Media Session, shortcuts, Milkdrop | `webamp/5-state-and-media` | 1 | To do |
 | 6. Store listing, end-to-end tests, `v1.0.0` | `webamp/6-store` | 2 to 5 | To do |

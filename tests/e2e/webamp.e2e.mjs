@@ -3,7 +3,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { TONE, boot, launchOptions, openApp, runInTerminal, startHost, uploadToHome } from './host.mjs';
+import { TONE, TONES_LIST, boot, launchOptions, openApp, runInTerminal, startHost, uploadToHome } from './host.mjs';
 
 let host;
 let browser;
@@ -79,5 +79,68 @@ test('a file that cannot be read says why and Webamp stays open', { timeout: 300
     assert.equal(await status.getAttribute('role'), 'alert');
     await page.locator('#main-window').waitFor();
     assert.equal(await page.locator('#playlist-window .track-cell').count(), 0);
+    await page.close();
+});
+
+// The playlist window's LIST OPTS menu (Webamp's own markup): new, save and load list.
+const listMenu = async (page, item) => {
+    // The first press on a Webamp window only selects it.
+    await page.locator('#playlist-window').click({ position: { x: 140, y: 6 } });
+    await page.locator('#playlist-list-menu').click();
+    await page.locator(`#playlist-list-menu .${item}`).click();
+};
+
+test('a list saved with Save list goes through the OS dialog and Load list brings it back', { timeout: 300_000 }, async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await boot(page, host.baseUrl);
+    await uploadToHome(page, TONE);
+    await runInTerminal(page, 'launch ca.kazo.webamp /home/neo/tone.mp3');
+    await page.locator('#playlist-window').getByText('Kazo Test - Tone 440').waitFor({ timeout: 30_000 });
+
+    // Save list: the OS's Save dialog, then a .m3u8 in ~.
+    await listMenu(page, 'save-list');
+    const save = page.getByRole('dialog', { name: 'Save the playlist' }).last();
+    await save.waitFor({ timeout: 15_000 });
+    await save.locator('input').last().fill('mix.m3u8');
+    await save.getByRole('button', { name: 'Save', exact: true }).click();
+    const saved = page.locator('.webamp-window .app-status', { hasText: 'mix.m3u8 saved.' });
+    await saved.waitFor({ timeout: 15_000 });
+    // The message sits over the bottom of the playlist window, where LIST OPTS is.
+    await saved.getByRole('button', { name: 'Dismiss' }).click();
+
+    // New list empties Webamp's list; Load list fills it again from the file.
+    await listMenu(page, 'new-list');
+    await page.locator('#playlist-window .track-cell').first().waitFor({ state: 'detached', timeout: 10_000 });
+    await listMenu(page, 'load-list');
+    const open = page.getByRole('dialog', { name: 'Load a playlist' }).last();
+    await open.waitFor({ timeout: 15_000 });
+    await open.getByText('mix.m3u8', { exact: true }).first().click();
+    await open.getByRole('button', { name: 'Open', exact: true }).click();
+    await page.locator('#playlist-window').getByText('Kazo Test - Tone 440').waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('#playlist-window').getByText('Kazo Test - Tone 440').count(), 1);
+    assert.deepEqual(errors, []);
+    await page.close();
+});
+
+test('opening a playlist plays its tracks and says what it left out', { timeout: 300_000 }, async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await boot(page, host.baseUrl);
+    await uploadToHome(page, TONE);
+    await uploadToHome(page, TONES_LIST);
+    await runInTerminal(page, 'launch ca.kazo.webamp /home/neo/tones.m3u');
+
+    await page.locator('#main-window.play').waitFor({ timeout: 30_000 });
+    await page.locator('#playlist-window').getByText('Kazo Test - Tone 440').waitFor({ timeout: 15_000 });
+    const status = page.locator('.webamp-window .app-status');
+    await status.getByText('missing.mp3', { exact: false }).waitFor({ timeout: 15_000 });
+    assert.match(await status.innerText(), /1 web address/);
+    // The tone only: the missing file failed, the web address was left out.
+    assert.equal(await page.locator('#playlist-window').getByText(/Tone 440|missing|radio/).count(), 1);
+
+    // The message can be dismissed.
+    await status.getByRole('button', { name: 'Dismiss' }).click();
+    await status.waitFor({ state: 'detached', timeout: 5_000 });
     await page.close();
 });

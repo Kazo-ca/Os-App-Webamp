@@ -12,6 +12,9 @@ const hostProject = path.join(root, 'src', 'Kazo.Webamp.Os');
 /** The test track: four seconds of a 440 Hz tone, tagged "Kazo Test - Tone 440" (fixtures/make-tone.sh). */
 export const TONE = path.join(root, 'tests', 'e2e', 'fixtures', 'tone.mp3');
 
+/** A .m3u next to the tone: the tone, a missing file and a web address (fixtures/tones.m3u). */
+export const TONES_LIST = path.join(root, 'tests', 'e2e', 'fixtures', 'tones.m3u');
+
 // The first WebAssembly boot downloads and compiles the whole OS: give it time.
 export const BOOT_TIMEOUT_MS = 120_000;
 

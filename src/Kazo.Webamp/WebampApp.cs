@@ -1,4 +1,5 @@
 using Kazo.Os.App.Abstractions;
+using Kazo.Webamp.Playlists;
 
 namespace Kazo.Webamp;
 
@@ -58,6 +59,23 @@ public sealed class WebampApp : AppDefinition
         // ~/.config/ca.kazo.webamp/ (the state of work item 5).
         AppCapabilities.FileSystemPrivateRead,
         AppCapabilities.FileSystemPrivateWrite,
+        // "Save list" writes a .m3u8 where the user chose (work item 3).
+        AppCapabilities.FileSystemUserHomeWrite,
+        // "Load list" and "Save list" of Webamp open the OS dialogs (work item 3).
+        AppCapabilities.DialogFileOpen,
+        AppCapabilities.DialogFileSave,
+    ];
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Work item 3: playlists. Opening one adds its tracks to Webamp's list and plays the first one
+    /// (decisions 5 and 10).
+    /// </remarks>
+    public override IReadOnlyList<FileHandler> FileHandlers =>
+    [
+        new(PlaylistFormats.M3uMediaType, [".m3u"], ["open"]),
+        new(PlaylistFormats.M3u8MediaType, [".m3u8"], ["open"]),
+        new(PlaylistFormats.PlsMediaType, [".pls"], ["open"]),
     ];
 
     /// <inheritdoc />
