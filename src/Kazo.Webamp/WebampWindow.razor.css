@@ -55,6 +55,32 @@
     font: 0.8rem/1.3 ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
+.app-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.app-status-text {
+    flex: 1;
+}
+
+.app-status-dismiss {
+    flex: none;
+    padding: 0 0.3rem;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.app-status-dismiss:hover,
+.app-status-dismiss:focus-visible {
+    color: #ffffff;
+    outline: 1px solid currentColor;
+}
+
 .app-status.failed {
     border-color: rgba(255, 90, 90, 0.6);
     color: #ffb3b3;

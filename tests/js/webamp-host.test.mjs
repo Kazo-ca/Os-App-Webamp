@@ -2,7 +2,7 @@
 // fake Webamp: the options, the Blob addresses (created, kept while listed, given back), the events.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHost, describeTrack, webampOptions } from '../../src/Kazo.Webamp/wwwroot/js/webamp-host.js';
+import { createHost, describeTrack, trackTitle, webampOptions } from '../../src/Kazo.Webamp/wwwroot/js/webamp-host.js';
 
 /** Just enough of Webamp 2.3.1's public API, with a store that notifies on every change. */
 class FakeWebamp {
@@ -39,7 +39,12 @@ class FakeWebamp {
     onClose(listener) { return this._on('close', listener); }
     onMinimize(listener) { return this._on('minimize', listener); }
     onTrackDidChange(listener) { return this._on('track', listener); }
-    getPlaylistTracks() { return this.tracks.map((track, id) => ({ id, url: track.url, defaultName: track.defaultName })); }
+    getPlaylistTracks() {
+        return this.tracks.map((track, id) => ({
+            id, url: track.url, defaultName: track.defaultName, duration: track.duration ?? null,
+            artist: track.artist ?? null, title: track.title ?? null,
+        }));
+    }
 
     // Like Webamp, a batch arrives one track at a time, the store notifying after each one.
     appendTracks(tracks) {
@@ -69,7 +74,7 @@ class FakeWebamp {
 }
 
 const start = async () => {
-    const events = { closed: 0, minimized: 0, tracks: [], lists: [] };
+    const events = { closed: 0, minimized: 0, tracks: [], lists: [], loads: 0, saves: [] };
     const urls = { created: [], revoked: [] };
     let next = 0;
     const host = await createHost({ id: 'surface' }, {
@@ -77,6 +82,8 @@ const start = async () => {
         onMinimize: () => events.minimized++,
         onTrackChanged: track => events.tracks.push(track),
         onPlaylistChanged: keys => events.lists.push(keys),
+        onLoadList: () => events.loads++,
+        onSaveList: (entries, unsaved) => events.saves.push({ entries, unsaved }),
     }, {}, {
         Webamp: FakeWebamp,
         createObjectURL: blob => {
@@ -191,4 +198,48 @@ test('dispose stops the music, removes Webamp, gives every address back and igno
 test('describeTrack keeps the artist and the title only', () => {
     assert.equal(describeTrack(null), null);
     assert.deepEqual(describeTrack({ metaData: {} }), { artist: null, title: null });
+});
+
+test('Load list asks C# and gives Webamp nothing, so Webamp keeps its list until C# replaces it', async () => {
+    const { host, webamp, events } = await start();
+    host.addTracks([track('t1')], false);
+
+    const given = await webamp.options.handleLoadListEvent();
+
+    assert.equal(given, null);
+    assert.equal(events.loads, 1);
+    assert.deepEqual(host.playlistKeys(), ['t1']);
+});
+
+test('Save list sends C# the keyed tracks with their title and duration, and counts the others', async () => {
+    const { host, webamp, events } = await start();
+    host.addTracks([track('t1'), { ...track('t2'), name: 'From the list', durationSeconds: 61 }], false);
+    webamp.tracks[0].artist = 'Artist';
+    webamp.tracks[0].title = 'Song';
+    webamp.tracks[0].duration = 4.2;
+    webamp.appendTracks([{ url: 'blob:dropped/1', defaultName: 'dropped.mp3' }]);
+
+    webamp.options.handleSaveListEvent([]);
+
+    assert.deepEqual(events.saves, [{
+        entries: [
+            { key: 't1', title: 'Artist - Song', duration: 4.2 },
+            { key: 't2', title: 'From the list', duration: 61 },
+        ],
+        unsaved: 1,
+    }]);
+});
+
+test('a track from a playlist carries its duration to Webamp; others carry none', async () => {
+    const { host, webamp } = await start();
+    host.addTracks([{ ...track('t1'), durationSeconds: 12 }, track('t2')], false);
+    assert.equal(webamp.tracks[0].duration, 12);
+    assert.equal('duration' in webamp.tracks[1], false);
+});
+
+test('the title of a saved track is Artist - Title, the title, or the name Webamp shows', () => {
+    assert.equal(trackTitle({ artist: 'A', title: 'T' }), 'A - T');
+    assert.equal(trackTitle({ artist: '', title: 'T' }), 'T');
+    assert.equal(trackTitle({ artist: 'A', title: null, defaultName: 'file.mp3' }), 'file.mp3');
+    assert.equal(trackTitle({}), null);
 });
