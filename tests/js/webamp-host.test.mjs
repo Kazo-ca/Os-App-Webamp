@@ -17,8 +17,11 @@ class FakeWebamp {
         this.disposed = false;
         this.renderedInto = null;
         this.listeners = { close: [], minimize: [], track: [], store: [] };
+        this.dispatched = [];
+        this.skinUrl = null;
         this.store = {
             subscribe: listener => this._on('store', listener),
+            dispatch: action => this.dispatched.push(action),
         };
     }
 
@@ -66,6 +69,8 @@ class FakeWebamp {
     play() { this.playing = true; }
     stop() { this.playing = false; }
     dispose() { this.disposed = true; }
+    setSkinFromUrl(url) { this.skinUrl = url; }
+    async skinIsLoaded() { this.skinLoadedAwaited = true; }
 
     removeTrack(index) {
         this.tracks.splice(index, 1);
@@ -73,8 +78,8 @@ class FakeWebamp {
     }
 }
 
-const start = async () => {
-    const events = { closed: 0, minimized: 0, tracks: [], lists: [], loads: 0, saves: [] };
+const start = async (options = {}) => {
+    const events = { closed: 0, minimized: 0, tracks: [], lists: [], loads: 0, saves: [], skinFiles: [], skinChoices: [] };
     const urls = { created: [], revoked: [] };
     let next = 0;
     const host = await createHost({ id: 'surface' }, {
@@ -84,7 +89,9 @@ const start = async () => {
         onPlaylistChanged: keys => events.lists.push(keys),
         onLoadList: () => events.loads++,
         onSaveList: (entries, unsaved) => events.saves.push({ entries, unsaved }),
-    }, {}, {
+        onSkinFile: (name, bytes) => events.skinFiles.push({ name, bytes }),
+        onSkinChosen: key => events.skinChoices.push(key),
+    }, options, {
         Webamp: FakeWebamp,
         createObjectURL: blob => {
             const url = `blob:test/${++next}`;
@@ -242,4 +249,57 @@ test('the title of a saved track is Artist - Title, the title, or the name Webam
     assert.equal(trackTitle({ artist: '', title: 'T' }), 'T');
     assert.equal(trackTitle({ artist: 'A', title: null, defaultName: 'file.mp3' }), 'file.mp3');
     assert.equal(trackTitle({}), null);
+});
+
+const skin = (key, name = key.replace(/\.wsz$/, ''), bytes = [0x50, 0x4b]) => ({ key, name, bytes: new Uint8Array(bytes) });
+
+test('Webamp starts with the user\'s skins in its menu and the skin in use on', async () => {
+    const { webamp, urls } = await start({ skins: [skin('Bento.wsz'), skin('Green.wsz')], initialSkin: 'Green.wsz' });
+
+    assert.equal(urls.created.length, 2);
+    assert.equal(urls.created[0].blob.type, 'application/x-winamp-skin');
+    assert.deepEqual(webamp.options.availableSkins, [{ url: 'blob:test/1', name: 'Bento' }, { url: 'blob:test/2', name: 'Green' }]);
+    assert.deepEqual(webamp.options.initialSkin, { url: 'blob:test/2' });
+});
+
+test('without a skin in use, Webamp starts on its base skin', async () => {
+    const { webamp } = await start({ skins: [skin('Bento.wsz')], initialSkin: null });
+    assert.equal(webamp.options.initialSkin, undefined);
+    const none = await start();
+    assert.deepEqual(none.webamp.options.availableSkins, []);
+});
+
+test('an added skin joins the menu in name order and is put on once Webamp drew it', async () => {
+    const { host, webamp } = await start({ skins: [skin('Bento.wsz'), skin('zebra.wsz')] });
+
+    await host.addSkin(skin('apple.wsz'), true);
+
+    assert.deepEqual(host.skinKeys(), ['apple.wsz', 'Bento.wsz', 'zebra.wsz']);
+    assert.deepEqual(webamp.dispatched.at(-1), {
+        type: 'SET_AVAILABLE_SKINS',
+        skins: [{ url: 'blob:test/3', name: 'apple' }, { url: 'blob:test/1', name: 'Bento' }, { url: 'blob:test/2', name: 'zebra' }],
+    });
+    assert.equal(webamp.skinUrl, 'blob:test/3');
+    assert.equal(webamp.skinLoadedAwaited, true);
+});
+
+test('a skin added again replaces the listed one and gives its old address back; without apply nothing changes on screen', async () => {
+    const { host, webamp, urls } = await start({ skins: [skin('Bento.wsz')] });
+
+    await host.addSkin(skin('Bento.wsz', 'Bento', [1]), false);
+
+    assert.deepEqual(host.skinKeys(), ['Bento.wsz']);
+    assert.deepEqual(urls.revoked, ['blob:test/1']);
+    assert.equal(webamp.skinUrl, null);
+});
+
+test('dispose gives the skins\' addresses back too', async () => {
+    const { host, urls } = await start({ skins: [skin('Bento.wsz')] });
+    await host.addSkin(skin('Green.wsz'), true);
+
+    host.dispose();
+
+    assert.deepEqual(urls.revoked.sort(), ['blob:test/1', 'blob:test/2']);
+    await host.addSkin(skin('Late.wsz'), true);
+    assert.deepEqual(host.skinKeys(), []);
 });

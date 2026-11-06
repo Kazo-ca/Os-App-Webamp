@@ -63,6 +63,27 @@
   <data name="StartFailed" xml:space="preserve">
     <value>Webamp n’a pas pu démarrer : {0}</value>
   </data>
+  <data name="SkinFailedTitle" xml:space="preserve">
+    <value>Webamp : skin non chargé</value>
+  </data>
+  <data name="SkinFailed" xml:space="preserve">
+    <value>{0} n’a pas été chargé : {1} Le skin en cours reste.</value>
+  </data>
+  <data name="SkinNotAnArchive" xml:space="preserve">
+    <value>ce n’est pas un skin Winamp (un .wsz est une archive ZIP).</value>
+  </data>
+  <data name="SkinNoMainBitmap" xml:space="preserve">
+    <value>ce n’est pas un skin Winamp (il n’a pas de {0}).</value>
+  </data>
+  <data name="SkinTooLarge" xml:space="preserve">
+    <value>il dépasse {0} Mo.</value>
+  </data>
+  <data name="SkinTipTitle" xml:space="preserve">
+    <value>Skins de Webamp</value>
+  </data>
+  <data name="SkinTip" xml:space="preserve">
+    <value>Pour changer de skin : double-cliquez un fichier .wsz, ou clic droit ▸ Skins ▸ Load Skin…</value>
+  </data>
   <data name="TracksNotSaved" xml:space="preserve">
     <value>{0} morceau(x) glissé(s) depuis l’ordinateur n’ont pas de fichier dans Kazo OS et n’y sont pas.</value>
   </data>

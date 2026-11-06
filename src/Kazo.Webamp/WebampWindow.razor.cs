@@ -6,6 +6,7 @@ using Kazo.Os.AppSdk.IO;
 using Kazo.Os.Simulation.Abstractions.Processes;
 using Kazo.Webamp.Player;
 using Kazo.Webamp.Playlists;
+using Kazo.Webamp.Skins;
 using Kazo.Webamp.Tracks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Localization;
@@ -19,9 +20,10 @@ namespace Kazo.Webamp;
 /// </summary>
 /// <remarks>
 /// Opened on a file (a double-click, "Open with", <c>webamp song.mp3</c>), it plays that file; on a
-/// playlist, its tracks are added and the first one plays (decision 10). Webamp's "Load list" and
-/// "Save list" go through the OS dialogs. The <see cref="Tracks"/> library is what work items 2 to 5
-/// build on (open, playlists, state).
+/// playlist, its tracks are added and the first one plays (decision 10); on a <c>.wsz</c>, it puts
+/// that skin on (<c>WebampWindow.Skins.cs</c>, work item 4). Webamp's "Load list" and "Save list" go
+/// through the OS dialogs. The <see cref="Tracks"/> library is what work items 2 to 5 build on (open,
+/// playlists, state).
 /// </remarks>
 public sealed partial class WebampWindow : IAsyncDisposable
 {
@@ -52,6 +54,7 @@ public sealed partial class WebampWindow : IAsyncDisposable
             _player.PlaylistChanged -= OnPlaylistChanged;
             _player.LoadListRequested -= OnLoadListRequestedAsync;
             _player.SaveListRequested -= OnSaveListRequestedAsync;
+            DetachSkins(_player);
             await _player.DisposeAsync();
             _player = null;
         }
@@ -68,10 +71,12 @@ public sealed partial class WebampWindow : IAsyncDisposable
             return;
         }
 
+        // The user's skins first: Webamp starts with them in its menu and the skin in use on.
+        SkinController skins = await StartSkinsAsync();
         WebampPlayer player = new(JavaScript);
         try
         {
-            await player.StartAsync(_surface, AppContext.CancellationToken);
+            await player.StartAsync(_surface, skins.Library.Skins, skins.Current, AppContext.CancellationToken);
         }
         catch (Exception exception) when (exception is JSException or InvalidOperationException)
         {
@@ -86,16 +91,48 @@ public sealed partial class WebampWindow : IAsyncDisposable
         _player.LoadListRequested += OnLoadListRequestedAsync;
         _player.SaveListRequested += OnSaveListRequestedAsync;
         Tracks = new TrackLibrary(player);
+        AttachSkins(player, skins);
         _status = null;
 
-        // Opened on a file: play it (a playlist: add its tracks and play the first one).
+        // Opened on a file: a skin is put on; music plays (a playlist: its tracks are added and the
+        // first one plays).
         if (LaunchFile is { } file)
         {
-            await OpenFilesAsync([file], play: true);
+            await OpenAsync(file);
         }
 
         StateHasChanged();
+        await ShowSkinTipOnceAsync();
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Webamp is one window per user: a file opened while it runs (a double-click, <c>webamp x</c>)
+    /// arrives here with its path as the first argument.
+    /// </remarks>
+    protected override async Task OnIntentReceivedAsync(AppIntentDelivery intent)
+    {
+        if (intent.Arguments is not [{ } first, ..] || !first.StartsWith('/'))
+        {
+            return;
+        }
+
+        VirtualPath file;
+        try
+        {
+            file = VirtualPath.Parse(first);
+        }
+        catch (FormatException)
+        {
+            return;
+        }
+
+        await OpenAsync(file);
+    }
+
+    // A file given to Webamp: a skin is put on, anything else goes to the list and plays.
+    private Task OpenAsync(VirtualPath file) =>
+        IsSkinFile(file) ? OpenSkinAsync(file) : OpenFilesAsync([file], play: true);
 
     // Webamp's close button (or "Exit" in its menu) closes the OS window: the app's own process
     // stops, which an app may always do (ADR 0140 of Kazo OS).
