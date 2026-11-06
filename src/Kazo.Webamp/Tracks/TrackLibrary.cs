@@ -54,6 +54,12 @@ public sealed class TrackLibrary
     /// <summary>Gets the files in Webamp's list, in its order.</summary>
     public IReadOnlyList<VirtualPath> Paths => [.. _order.Select(key => _entries[key].Path)];
 
+    /// <summary>
+    /// Gets the keys of the files in Webamp's list, in its order (the same order as <see cref="Paths"/>):
+    /// the host module names the current track by its key.
+    /// </summary>
+    public IReadOnlyList<string> Keys => [.. _order];
+
     /// <summary>Gets the total size of the files held in memory for Webamp, in bytes.</summary>
     public long LoadedBytes => _entries.Values.Sum(entry => entry.Size);
 

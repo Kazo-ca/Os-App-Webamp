@@ -1,3 +1,4 @@
+using Kazo.Webamp.State;
 using Kazo.Webamp.Tracks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
@@ -14,7 +15,7 @@ namespace Kazo.Webamp.Player;
 /// events arrive through the <see cref="JSInvokableAttribute"/> methods below, called by the module
 /// with <c>invokeMethodAsync</c>.
 /// </remarks>
-public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
+public sealed class WebampPlayer : ITrackPlayer, IStatePlayer, IAsyncDisposable
 {
     /// <summary>Path of the host module, served by the app's Razor library.</summary>
     public const string ModulePath = "./_content/Kazo.Webamp/js/webamp-host.js";
@@ -38,11 +39,17 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     /// <summary>Raised when the user presses Webamp's minimize button.</summary>
     public event Func<Task>? Minimized;
 
-    /// <summary>Raised when Webamp starts another track, or <see langword="null"/> when none plays.</summary>
+    /// <summary>Raised when the current track or its tags changed, or with <see langword="null"/> when there is none.</summary>
     public event Func<WebampTrackInfo?, Task>? TrackChanged;
 
     /// <summary>Raised with the keys of <see cref="TrackLibrary"/> still in Webamp's list, in its order.</summary>
     public event Action<IReadOnlyList<string>>? PlaylistChanged;
+
+    /// <summary>
+    /// Raised when something saved in <c>state.json</c> changed in Webamp (volume, equalizer, a window
+    /// moved, the current track; the position in steps of a few seconds while playing).
+    /// </summary>
+    public event Action? StateChanged;
 
     /// <summary>Gets whether Webamp is on screen.</summary>
     public bool IsStarted => _host is not null;
@@ -50,7 +57,18 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     /// <summary>Loads Webamp and renders it into <paramref name="element"/>.</summary>
     /// <param name="element">An empty element of the window, sized by the window.</param>
     /// <param name="cancellationToken">Cancels the start.</param>
-    public async Task StartAsync(ElementReference element, CancellationToken cancellationToken = default)
+    public Task StartAsync(ElementReference element, CancellationToken cancellationToken = default) =>
+        StartAsync(element, settings: null, focused: false, cancellationToken);
+
+    /// <summary>
+    /// Loads Webamp with saved settings and renders it into <paramref name="element"/>: the volume,
+    /// equalizer, window layout and double size are there from the first frame.
+    /// </summary>
+    /// <param name="element">An empty element of the window, sized by the window.</param>
+    /// <param name="settings">The saved settings, or <see langword="null"/> for Webamp's defaults.</param>
+    /// <param name="focused">Whether the app's window has the focus (Webamp's hotkeys act).</param>
+    /// <param name="cancellationToken">Cancels the start.</param>
+    public async Task StartAsync(ElementReference element, PlayerSettings? settings, bool focused, CancellationToken cancellationToken = default)
     {
         if (_host is not null)
         {
@@ -59,8 +77,29 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
 
         _self ??= DotNetObjectReference.Create(this);
         _module ??= await _javaScript.InvokeAsync<IJSObjectReference>("import", cancellationToken, ModulePath);
-        _host = await _module.InvokeAsync<IJSObjectReference>("create", cancellationToken, element, _self, new { zIndex = 0 });
+        _host = await _module.InvokeAsync<IJSObjectReference>("create", cancellationToken, element, _self, new { zIndex = 0, settings, focused });
     }
+
+    /// <inheritdoc />
+    public ValueTask<PlayerSnapshot> ReadStateAsync(CancellationToken cancellationToken = default) =>
+        Host.InvokeAsync<PlayerSnapshot>("readState", cancellationToken);
+
+    /// <inheritdoc />
+    public async ValueTask ResumeAsync(int index, double position, CancellationToken cancellationToken = default) =>
+        await Host.InvokeAsync<bool>("resume", cancellationToken, index, position);
+
+    /// <inheritdoc />
+    public ValueTask ApplySkinAsync(string name, byte[] bytes, CancellationToken cancellationToken = default) =>
+        Host.InvokeVoidAsync("setSkin", cancellationToken, bytes);
+
+    /// <summary>
+    /// Lets Webamp's hotkeys act while the app's window has the focus, and only then (decision 17).
+    /// </summary>
+    /// <param name="focused">Whether the window has the focus.</param>
+    /// <param name="cancellationToken">Cancels the request.</param>
+    /// <returns>A task completed once the module was told.</returns>
+    public ValueTask SetFocusedAsync(bool focused, CancellationToken cancellationToken = default) =>
+        _host is null ? ValueTask.CompletedTask : _host.InvokeVoidAsync("setFocused", cancellationToken, focused);
 
     /// <inheritdoc />
     public ValueTask AddAsync(IReadOnlyList<TrackData> tracks, bool play, CancellationToken cancellationToken = default) =>
@@ -78,10 +117,14 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     [JSInvokable]
     public Task OnWebampMinimized() => Minimized?.Invoke() ?? Task.CompletedTask;
 
-    /// <summary>Called by the host module when Webamp started another track.</summary>
-    /// <param name="track">Its tags, or <see langword="null"/> when none plays.</param>
+    /// <summary>Called by the host module when the current track or its tags changed.</summary>
+    /// <param name="track">Its tags and file name, or <see langword="null"/> when there is no current track.</param>
     [JSInvokable]
     public Task OnTrackChanged(WebampTrackInfo? track) => TrackChanged?.Invoke(track) ?? Task.CompletedTask;
+
+    /// <summary>Called by the host module when something saved in <c>state.json</c> changed.</summary>
+    [JSInvokable]
+    public void OnStateChanged() => StateChanged?.Invoke();
 
     /// <summary>Called by the host module when the tracks of Webamp's list changed.</summary>
     /// <param name="keys">The keys still listed, in order.</param>

@@ -4,13 +4,33 @@
 // come from, what to play. This module only does what C# cannot reach: it creates the Webamp
 // instance inside the app's window, turns the bytes of a file into a Blob address Webamp can play,
 // gives that address back to the browser when the track leaves Webamp's list, and reports Webamp's
-// events (close, minimize, track change, list change) to C#.
+// events (close, minimize, track change, list change, state change) to C#.
+//
+// Work item 5 adds: reading and restoring what Webamp holds (state.json, decision 13), the Media
+// Session (decision 8), Webamp's hotkeys only while the app's window has the focus (decision 17), and
+// Milkdrop's Butterchurn loaded only when its window first opens (decision 12).
 //
 // It keeps no state outside one host object per window, so a test drives it with a fake Webamp
 // class (tests/js/webamp-host.test.mjs).
 
 /** Address of the Webamp 2.3.1 bundle (JSZip and music-metadata included), next to this module. */
 const WEBAMP_BUNDLE = new URL('../lib/webamp/webamp.bundle.min.mjs', import.meta.url).href;
+
+/** Butterchurn 3.0.0-beta.5 (ES module) and its base presets (UMD, declares `self.base`). */
+const BUTTERCHURN = new URL('../lib/butterchurn/butterchurn.min.js', import.meta.url).href;
+const BUTTERCHURN_PRESETS = new URL('../lib/butterchurn-presets/base.min.js', import.meta.url).href;
+
+/** Webamp's four windows, by their id in its store. */
+export const WINDOW_IDS = ['main', 'equalizer', 'playlist', 'milkdrop'];
+
+/** The bands of Winamp's equalizer, by their id in Webamp's store (Hz). */
+export const EQ_BANDS = [60, 170, 310, 600, 1000, 3000, 6000, 12000, 14000, 16000];
+
+/** While playing, the position is reported to C# once per this many seconds (a save at most that often). */
+export const POSITION_STEP_SECONDS = 5;
+
+/** How long a restored track may take to load before its position is given up (ms). */
+export const RESUME_TIMEOUT_MS = 10000;
 
 /**
  * Loads the Webamp class from the vendored bundle.
@@ -21,39 +41,157 @@ export async function loadWebamp() {
     return module.default;
 }
 
+/** Loads Butterchurn, the Milkdrop renderer (2 MB with its presets): only when Milkdrop first opens. */
+async function importButterchurn() {
+    return import(BUTTERCHURN);
+}
+
 /**
- * The options every Webamp of the app is created with (decisions 9 and 17 of doc/en/plan.md).
- * @param {{ zIndex?: number }} [options] Options from C#.
+ * Loads the base presets: the UMD file declares `self.base` (its `default` maps names to presets).
+ * @returns {Promise<{ name: string, butterchurnPresetObject: object }[]>} Presets as Webamp takes them.
+ */
+async function importPresets() {
+    await import(BUTTERCHURN_PRESETS);
+    const base = globalThis.base;
+    return Object.entries(base?.default ?? base ?? {})
+        .map(([name, preset]) => ({ name, butterchurnPresetObject: preset }));
+}
+
+/**
+ * Milkdrop without its cost (decision 12): Webamp asks for Butterchurn and the presets as soon as
+ * it is created; the promises given here wait until `open()` is called, when Milkdrop's window
+ * first opens.
+ * @param {boolean} butterchurnOpen Whether Milkdrop's window is open at start (a restored layout).
+ * @param {{ importButterchurn?: () => Promise<any>, importPresets?: () => Promise<object[]> }} [loaders] Replaced by the tests.
+ * @returns {{ options: object, open: () => void, readonly requested: boolean }} Webamp's `__butterchurnOptions` and the gate.
+ */
+export function lazyButterchurn(butterchurnOpen, loaders = {}) {
+    let release;
+    const opened = new Promise(resolve => {
+        release = resolve;
+    });
+    const gate = {
+        requested: false,
+        open() {
+            gate.requested = true;
+            release();
+        },
+        options: {
+            importButterchurn: () => opened.then(loaders.importButterchurn ?? importButterchurn),
+            getPresets: () => opened.then(loaders.importPresets ?? importPresets),
+            butterchurnOpen,
+        },
+    };
+    return gate;
+}
+
+/**
+ * The layout Webamp takes at creation (its `windowLayout` option) from the saved one.
+ * @param {object | null | undefined} windows The saved windows (C# `WindowLayout`).
+ * @returns {object | undefined} Webamp's layout; `undefined` stacks the windows as Webamp does.
+ */
+export function toWindowLayout(windows) {
+    if (windows == null) {
+        return undefined;
+    }
+    const layout = {};
+    for (const id of WINDOW_IDS) {
+        const w = windows[id];
+        if (w == null) {
+            continue;
+        }
+        layout[id] = {
+            position: { left: w.x, top: w.y },
+            closed: !w.open,
+            // Milkdrop cannot be rolled up (Webamp throws).
+            ...(id !== 'milkdrop' && w.shade ? { shadeMode: true } : {}),
+            ...(id === 'playlist' || id === 'milkdrop'
+                ? { size: { extraWidth: w.extraWidth ?? 0, extraHeight: w.extraHeight ?? 0 } }
+                : {}),
+        };
+    }
+    return layout;
+}
+
+/**
+ * The options every Webamp of the app is created with (decisions 8, 9, 12, 13 and 17 of doc/en/plan.md).
+ * @param {{ zIndex?: number, settings?: object | null }} [options] Options from C#.
+ * @param {object} [butterchurn] Webamp's `__butterchurnOptions` (`lazyButterchurn(...).options`).
  * @returns {object} Webamp options.
  */
-export function webampOptions(options = {}) {
+export function webampOptions(options = {}, butterchurn = undefined) {
+    const settings = options.settings ?? null;
     return {
-        // Webamp's own hotkeys listen to the whole page and would take the keys of the other apps.
-        enableHotkeys: false,
+        // Webamp's hotkeys listen to the whole page: WebampHost captures that listener at creation
+        // and calls it only while the app's window has the focus (decision 17).
+        enableHotkeys: true,
+        // Media keys and the browser's media controls (decision 8).
+        enableMediaSession: true,
         // No music from the internet in the first version: "Add URL" does nothing (its button is
         // hidden by WebampWindow.razor.css).
         handleAddUrlEvent: () => null,
         zIndex: options.zIndex ?? 0,
+        enableDoubleSizeMode: settings?.doubleSize === true,
+        windowLayout: toWindowLayout(settings?.windows),
+        ...(butterchurn ? { __butterchurnOptions: butterchurn } : {}),
     };
+}
+
+/**
+ * Creates Webamp while capturing the page-wide `keydown` listener its hotkeys install on `document`
+ * (Webamp 2.3.1 `bindHotkeys`), instead of letting it listen: WebampHost calls it only while the
+ * app's window has the focus. Webamp's own removal of that listener, at dispose, does nothing.
+ * @param {Function} Webamp The Webamp class.
+ * @param {object} options Webamp options.
+ * @param {Document | undefined} doc The page (none under node).
+ * @returns {{ webamp: object, hotkeys: Function[] }} The instance and the captured listeners.
+ */
+export function constructCapturingHotkeys(Webamp, options, doc) {
+    const hotkeys = [];
+    if (doc == null || typeof doc.addEventListener !== 'function') {
+        return { webamp: new Webamp(options), hotkeys };
+    }
+    const original = doc.addEventListener;
+    doc.addEventListener = function (type, listener, ...rest) {
+        if (type === 'keydown') {
+            hotkeys.push(listener);
+            return undefined;
+        }
+        return original.call(this, type, listener, ...rest);
+    };
+    try {
+        return { webamp: new Webamp(options), hotkeys };
+    } finally {
+        doc.addEventListener = original;
+    }
 }
 
 /**
  * Creates the host of one Webamp window.
  * @param {HTMLElement} element The element Webamp renders into.
  * @param {{ onClose?: () => void, onMinimize?: () => void, onTrackChanged?: (track: object | null) => void,
- *           onPlaylistChanged?: (keys: string[]) => void }} callbacks What C# hears.
- * @param {{ zIndex?: number }} [options] Options from C#.
- * @param {{ Webamp?: Function, createObjectURL?: (blob: Blob) => string, revokeObjectURL?: (url: string) => void }} [deps]
- *        Replaced by the tests.
+ *           onPlaylistChanged?: (keys: string[]) => void, onStateChanged?: () => void }} callbacks What C# hears.
+ * @param {{ zIndex?: number, settings?: object | null, focused?: boolean }} [options] Options from C#:
+ *        `settings` is the saved C# `PlayerSettings` (or null on a first run).
+ * @param {{ Webamp?: Function, createObjectURL?: (blob: Blob) => string, revokeObjectURL?: (url: string) => void,
+ *           document?: Document, loaders?: object }} [deps] Replaced by the tests.
  * @returns {Promise<WebampHost>} The host, once Webamp is on screen.
  */
 export async function createHost(element, callbacks, options = {}, deps = {}) {
     const Webamp = deps.Webamp ?? await loadWebamp();
-    const host = new WebampHost(new Webamp(webampOptions(options)), callbacks, {
+    const settings = options.settings ?? null;
+    const butterchurn = lazyButterchurn(settings?.windows?.milkdrop?.open === true, deps.loaders);
+    const doc = 'document' in deps ? deps.document : globalThis.document;
+    const { webamp, hotkeys } = constructCapturingHotkeys(Webamp, webampOptions(options, butterchurn.options), doc);
+    const host = new WebampHost(webamp, callbacks, {
         createObjectURL: deps.createObjectURL ?? (blob => URL.createObjectURL(blob)),
         revokeObjectURL: deps.revokeObjectURL ?? (url => URL.revokeObjectURL(url)),
-    });
-    await host.webamp.renderInto(element);
+    }, { hotkeys, document: doc, butterchurn });
+    // Before the first frame: the saved volume, equalizer... and, when the user had moved Webamp's
+    // windows, their exact places (otherwise Webamp centers them in the element).
+    host.applySettings(settings);
+    host.setFocused(options.focused === true);
+    await webamp.renderInto(element);
     return host;
 }
 
@@ -74,6 +212,7 @@ export function create(element, dotNet, options = {}) {
         onMinimize: () => send('OnWebampMinimized'),
         onTrackChanged: track => send('OnTrackChanged', track),
         onPlaylistChanged: keys => send('OnPlaylistChanged', keys),
+        onStateChanged: () => send('OnStateChanged'),
     }, options);
 }
 
@@ -83,11 +222,30 @@ export class WebampHost {
      * @param {object} webamp The Webamp instance.
      * @param {object} callbacks What C# hears.
      * @param {{ createObjectURL: (blob: Blob) => string, revokeObjectURL: (url: string) => void }} urls Blob addresses.
+     * @param {{ hotkeys?: Function[], document?: Document, butterchurn?: { open: () => void, requested: boolean } }} [extras]
+     *        Webamp's captured hotkey listeners, the page, the Milkdrop gate.
      */
-    constructor(webamp, callbacks, urls) {
+    constructor(webamp, callbacks, urls, extras = {}) {
         this.webamp = webamp;
         this._callbacks = callbacks;
         this._urls = urls;
+        this._hotkeys = extras.hotkeys ?? [];
+        this._document = extras.document;
+        this._butterchurn = extras.butterchurn;
+        this._focused = false;
+        this._skinUrl = null;
+        this._lastTrack = undefined;
+        this._lastState = '';
+        this._onKeyDown = event => {
+            if (this._focused && !this._disposed) {
+                for (const listener of this._hotkeys) {
+                    listener(event);
+                }
+            }
+        };
+        if (this._hotkeys.length > 0) {
+            this._document?.addEventListener('keydown', this._onKeyDown);
+        }
         /** Blob address → C# key, for every track this host gave Webamp and that is still listed. */
         this._keysByUrl = new Map();
         /** Addresses already seen in Webamp's list: only those can have left it. */
@@ -97,9 +255,156 @@ export class WebampHost {
         this._unsubscribe = [
             webamp.onClose(() => this._callbacks.onClose?.()),
             webamp.onMinimize(() => this._callbacks.onMinimize?.()),
-            webamp.onTrackDidChange(track => this._callbacks.onTrackChanged?.(describeTrack(track))),
-            webamp.store.subscribe(() => this._playlistMayHaveChanged()),
+            webamp.store.subscribe(() => this._storeChanged()),
         ];
+    }
+
+    /** @returns {boolean} Whether Webamp's hotkeys act (the app's window has the focus). */
+    get focused() {
+        return this._focused;
+    }
+
+    /**
+     * Webamp's hotkeys act only while the app's window has the focus (decision 17): C# calls this
+     * when the OS activates or deactivates the window.
+     * @param {boolean} focused Whether the window has the focus.
+     */
+    setFocused(focused) {
+        this._focused = focused === true;
+    }
+
+    /**
+     * Puts saved settings back (C# `PlayerSettings`), through Webamp's own actions so its audio
+     * follows: volume, balance, shuffle, repeat, equalizer, and the exact window places when the
+     * user had moved them. The layout itself and the double size are Webamp options (`webampOptions`).
+     * @param {object | null | undefined} settings The saved settings; nothing on a first run.
+     */
+    applySettings(settings) {
+        if (settings == null || this._disposed) {
+            return;
+        }
+        const { store } = this.webamp;
+        this.webamp.setVolume(settings.volume);
+        store.dispatch({ type: 'SET_BALANCE', balance: settings.balance });
+        if (this.webamp.isShuffleEnabled() !== settings.shuffle) {
+            this.webamp.toggleShuffle();
+        }
+        if (this.webamp.isRepeatEnabled() !== settings.repeat) {
+            this.webamp.toggleRepeat();
+        }
+        const eq = settings.equalizer;
+        if (eq != null) {
+            store.dispatch({ type: 'SET_BAND_VALUE', band: 'preamp', value: eq.preamp });
+            EQ_BANDS.forEach((band, i) => {
+                if (eq.bands?.[i] != null) {
+                    store.dispatch({ type: 'SET_BAND_VALUE', band, value: eq.bands[i] });
+                }
+            });
+            store.dispatch({ type: eq.on ? 'SET_EQ_ON' : 'SET_EQ_OFF' });
+            store.dispatch({ type: 'SET_EQ_AUTO', value: eq.auto === true });
+        }
+        if (settings.windows?.absolute) {
+            const positions = {};
+            for (const id of WINDOW_IDS) {
+                const w = settings.windows[id];
+                if (w != null) {
+                    positions[id] = { x: w.x, y: w.y };
+                }
+            }
+            store.dispatch({ type: 'UPDATE_WINDOW_POSITIONS', positions, absolute: true });
+        }
+        this._lastState = this._stateSignature();
+    }
+
+    /**
+     * Reads what Webamp holds (C# `PlayerSnapshot`): the current track's key and the settings.
+     * @returns {{ currentKey: string | null, settings: object }}
+     */
+    readState() {
+        const state = this.webamp.store.getState();
+        const currentId = state.playlist.currentTrack;
+        const currentUrl = currentId == null ? null : state.tracks[currentId]?.url;
+        const status = state.media.status;
+        const playing = status === 'PLAYING' || status === 'PAUSED';
+        const elapsed = playing ? Number(this.webamp.media?.timeElapsed?.() ?? state.media.timeElapsed) : 0;
+        const windows = { absolute: state.windows.positionsAreRelative === false };
+        for (const id of WINDOW_IDS) {
+            const w = state.windows.genWindows[id];
+            windows[id] = {
+                x: Math.round(w.position.x),
+                y: Math.round(w.position.y),
+                open: w.open === true,
+                shade: w.shade === true,
+                extraWidth: w.size?.[0] ?? 0,
+                extraHeight: w.size?.[1] ?? 0,
+            };
+        }
+        return {
+            currentKey: (currentUrl != null ? this._keysByUrl.get(currentUrl) : undefined) ?? null,
+            settings: {
+                position: Number.isFinite(elapsed) && elapsed > 0 ? elapsed : 0,
+                volume: state.media.volume,
+                balance: state.media.balance,
+                shuffle: state.media.shuffle === true,
+                repeat: state.media.repeat === true,
+                equalizer: {
+                    on: state.equalizer.on === true,
+                    auto: state.equalizer.auto === true,
+                    preamp: state.equalizer.sliders.preamp,
+                    bands: EQ_BANDS.map(band => state.equalizer.sliders[band]),
+                },
+                doubleSize: state.display.doubled === true,
+                windows,
+            },
+        };
+    }
+
+    /**
+     * Makes a track of the list current without playing it. With a position, waits until the track
+     * is loaded, goes there and leaves Webamp paused: Play continues from there (Webamp starts a
+     * stopped track from its beginning).
+     * @param {number} index Index in Webamp's list.
+     * @param {number} position Seconds into the track.
+     * @returns {Promise<boolean>} Whether the position was reached.
+     */
+    async resume(index, position) {
+        if (this._disposed || index < 0 || index >= this.webamp.getPlaylistTracks().length) {
+            return false;
+        }
+        // Webamp is stopped: setCurrentTrack loads the track without playing it.
+        this.webamp.setCurrentTrack(index);
+        if (!(position > 0)) {
+            return false;
+        }
+        const loaded = await this._waitFor(() => Number.isFinite(this.webamp.media?.duration?.()) && this.webamp.media.duration() > 0, RESUME_TIMEOUT_MS);
+        if (!loaded || this._disposed) {
+            return false;
+        }
+        this.webamp.seekToTime(Math.min(position, this.webamp.media.duration()));
+        this.webamp.store.dispatch({ type: 'PAUSE' });
+        return true;
+    }
+
+    /**
+     * Applies a skin from its bytes (a `.wsz`), through a `blob:` address given back at the next
+     * skin or at dispose.
+     * @param {Uint8Array} bytes The skin file.
+     */
+    setSkin(bytes) {
+        if (this._disposed) {
+            return;
+        }
+        const previous = this._skinUrl;
+        this._skinUrl = this._urls.createObjectURL(new Blob([bytes], { type: 'application/x-winamp-skin' }));
+        this.webamp.setSkinFromUrl(this._skinUrl);
+        if (previous != null) {
+            this._urls.revokeObjectURL(previous);
+        }
+    }
+
+    /** @returns {boolean} Whether Butterchurn was asked for (Milkdrop opened once). */
+    get milkdropLoaded() {
+        return this._butterchurn?.requested === true;
     }
 
     /**
@@ -156,6 +461,11 @@ export class WebampHost {
         for (const unsubscribe of this._unsubscribe) {
             unsubscribe?.();
         }
+        this._document?.removeEventListener?.('keydown', this._onKeyDown);
+        if (this._skinUrl != null) {
+            this._urls.revokeObjectURL(this._skinUrl);
+            this._skinUrl = null;
+        }
         try {
             this.webamp.stop();
         } finally {
@@ -177,11 +487,71 @@ export class WebampHost {
         return { url, defaultName: track.name };
     }
 
-    // Webamp's store changes for every tick of the clock: only a different list of tracks matters.
-    _playlistMayHaveChanged() {
+    _storeChanged() {
         if (this._disposed) {
             return;
         }
+        this._playlistMayHaveChanged();
+        this._trackMayHaveChanged();
+        if (this._butterchurn && !this._butterchurn.requested
+            && this.webamp.store.getState().windows.genWindows.milkdrop?.open) {
+            this._butterchurn.open();
+        }
+        const signature = this._stateSignature();
+        if (signature !== this._lastState) {
+            this._lastState = signature;
+            this._callbacks.onStateChanged?.();
+        }
+    }
+
+    // What is saved, without the clock: while playing, the position counts in steps of
+    // POSITION_STEP_SECONDS, so the state is written at most that often.
+    _stateSignature() {
+        const { currentKey, settings } = this.readState();
+        const step = Math.floor(settings.position / POSITION_STEP_SECONDS);
+        return JSON.stringify([currentKey, step, { ...settings, position: 0 }]);
+    }
+
+    // The window's title follows the current track, playing or paused (Webamp's onTrackDidChange
+    // only names a playing track), with its tags once Webamp has read them.
+    _trackMayHaveChanged() {
+        const state = this.webamp.store.getState();
+        const id = state.playlist.currentTrack;
+        const track = id == null ? null : state.tracks[id];
+        const info = track == null ? null : {
+            artist: track.artist || null,
+            title: track.title || null,
+            name: track.defaultName || null,
+        };
+        const signature = JSON.stringify(info);
+        if (signature !== this._lastTrack) {
+            this._lastTrack = signature;
+            this._callbacks.onTrackChanged?.(info);
+        }
+    }
+
+    _waitFor(predicate, timeoutMs) {
+        if (predicate()) {
+            return Promise.resolve(true);
+        }
+        return new Promise(resolve => {
+            let unsubscribe = () => {};
+            const timer = setTimeout(() => {
+                unsubscribe();
+                resolve(false);
+            }, timeoutMs);
+            unsubscribe = this.webamp.store.subscribe(() => {
+                if (this._disposed || predicate()) {
+                    clearTimeout(timer);
+                    unsubscribe();
+                    resolve(!this._disposed);
+                }
+            });
+        });
+    }
+
+    // Webamp's store changes for every tick of the clock: only a different list of tracks matters.
+    _playlistMayHaveChanged() {
         const present = new Set(this.webamp.getPlaylistTracks().map(track => track.url));
         for (const url of [...this._keysByUrl.keys()]) {
             if (present.has(url)) {
@@ -201,19 +571,4 @@ export class WebampHost {
             this._callbacks.onPlaylistChanged?.(keys);
         }
     }
-}
-
-/**
- * The part of a Webamp track C# reads (artist and title, for the window title of work item 5).
- * @param {{ metaData?: { artist?: string | null, title?: string | null } } | null | undefined} track
- * @returns {{ artist: string | null, title: string | null } | null}
- */
-export function describeTrack(track) {
-    if (track == null) {
-        return null;
-    }
-    return {
-        artist: track.metaData?.artist ?? null,
-        title: track.metaData?.title ?? null,
-    };
 }

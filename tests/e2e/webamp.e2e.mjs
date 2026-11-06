@@ -18,8 +18,9 @@ after(async () => {
     host?.stop();
 });
 
-// Webamp's taskbar button: the OS window is there while it shows.
-const taskbarButton = page => page.locator('button', { hasText: /^\s*Webamp\s*$/ });
+// Webamp's taskbar button: the OS window is there while it shows. Its text is the window's title,
+// "Webamp" or "Artist - Title - Webamp" (work item 5).
+const taskbarButton = page => page.locator('button', { hasText: /^\s*(.+ - )?Webamp\s*$/ });
 
 test('Webamp opens from the Applications menu inside its OS window, without Add URL', { timeout: 300_000 }, async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -60,7 +61,8 @@ test('an .mp3 of the user opened with Webamp plays, and Webamp\'s close button c
     // Read through KazoFile, handed over as a Blob, its tags read by Webamp, and playing.
     await page.locator('#main-window.play').waitFor({ timeout: 30_000 });
     await page.locator('#playlist-window').getByText('Kazo Test - Tone 440').waitFor({ timeout: 15_000 });
-    assert.match(await page.locator('#playlist-window').innerText(), /0:04/);
+    // The duration shows once Webamp has read the file's header, a moment after its tags.
+    await page.locator('#playlist-window').getByText(/0:04/).first().waitFor({ timeout: 15_000 });
     assert.equal(await taskbarButton(page).count(), 1);
 
     await page.locator('#main-window #close').click();

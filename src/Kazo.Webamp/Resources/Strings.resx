@@ -21,6 +21,9 @@
   <data name="PlayerLabel" xml:space="preserve">
     <value>Webamp music player</value>
   </data>
+  <data name="StateSaveFailed" xml:space="preserve">
+    <value>Webamp could not save its state: {0}</value>
+  </data>
   <data name="StartFailed" xml:space="preserve">
     <value>Webamp could not start: {0}</value>
   </data>
