@@ -6,7 +6,6 @@ import { chromium } from 'playwright';
 import { TONE, TONE_220, boot, explorerRow, launchOptions, openFileMenu, runInTerminal, startHost, uploadToHome } from './host.mjs';
 
 let host;
-const test2 = (name, opts, fn) => test(name, opts, async () => { try { await fn(); } catch (e) { await globalThis.__shot?.(); console.log('STATE', JSON.stringify(await globalThis.__state?.())); throw e; } });
 let browser;
 
 before(async () => {
@@ -40,11 +39,10 @@ const newPage = async () => {
     const pickers = [];
     page.on('filechooser', chooser => pickers.push(chooser));
     await boot(page, host.baseUrl);
-    if (process.env.SHOT) { const n = Date.now(); page.on('close', () => {}); globalThis.__state = () => page.evaluate(() => [...document.querySelectorAll('#playlist-window .track-cell')].map(c => c.className + ' ' + c.textContent)).catch(e => e.message); globalThis.__shot = () => page.screenshot({ path: '/tmp/claude-0/-home-user/cb139a2d-d657-5a76-b459-393be2685914/scratchpad/fail-' + n + '.png' }).catch(() => {}); }
     return { page, pickers };
 };
 
-test2('a double-click on an .mp3 plays it in Webamp; two more opened at once are added in order and the first plays', { timeout: 300_000 }, async () => {
+test('a double-click on an .mp3 plays it in Webamp; two more opened at once are added in order and the first plays', { timeout: 300_000 }, async () => {
     const { page } = await newPage();
     await uploadToHome(page, [TONE, TONE_220]);
 
@@ -63,7 +61,7 @@ test2('a double-click on an .mp3 plays it in Webamp; two more opened at once are
     await page.close();
 });
 
-test2('the file menu adds a folder to Webamp\'s list without playing, or plays it, its files sorted by path', { timeout: 300_000 }, async () => {
+test('the file menu adds a folder to Webamp\'s list without playing, or plays it, its files sorted by path', { timeout: 300_000 }, async () => {
     const { page } = await newPage();
     await uploadToHome(page, TONE);
     // Two tracks in ~/Documents, sent in the opposite order of their names.
@@ -87,7 +85,7 @@ test2('the file menu adds a folder to Webamp\'s list without playing, or plays i
     await page.close();
 });
 
-test2('Webamp\'s eject and Add file show the OS dialog, never the browser\'s picker', { timeout: 300_000 }, async () => {
+test('Webamp\'s eject and Add file show the OS dialog, never the browser\'s picker', { timeout: 300_000 }, async () => {
     const { page, pickers } = await newPage();
     await uploadToHome(page, [TONE, TONE_220]);
     await runInTerminal(page, 'launch ca.kazo.webamp /home/neo/tone.mp3');

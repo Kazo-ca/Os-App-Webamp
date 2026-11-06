@@ -142,9 +142,12 @@ const ROW_RIGHT = { x: 420, y: 10 };
  * @param {string[]} paths The items, in the order they are selected.
  */
 export async function openFileMenu(page, paths) {
+    // A first press on a window behind Webamp only brings it to the front: press its status bar first.
+    await page.getByText(/\d+ item\(s\)/).last().click();
     for (const [index, itemPath] of paths.entries()) {
         await explorerRow(page, itemPath).click({ position: ROW_RIGHT, modifiers: index === 0 ? [] : ['Control'] });
     }
+    await page.getByText(new RegExp(`\\| ${paths.length} selected`)).last().waitFor({ timeout: 10_000 });
     await page.keyboard.press('Shift+F10');
     await page.getByRole('menu').first().waitFor({ timeout: 10_000 });
 }
