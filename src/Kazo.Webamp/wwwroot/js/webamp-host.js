@@ -3,8 +3,10 @@
 // The C# side (WebampPlayer, TrackLibrary) keeps the logic: which files are in the list, where they
 // come from, what to play. This module only does what C# cannot reach: it creates the Webamp
 // instance inside the app's window, turns the bytes of a file into a Blob address Webamp can play,
-// gives that address back to the browser when the track leaves Webamp's list, and reports Webamp's
-// events (close, minimize, track change, list change) to C#.
+// gives that address back to the browser when the track leaves Webamp's list, reports Webamp's
+// events (close, minimize, track change, list change) to C#, and stops the browser's file picker
+// that Webamp's "Open", "Add file" and "Add dir" would show, so C# shows the OS dialogs instead
+// (decision 16, FilePromptInterceptor below).
 //
 // It keeps no state outside one host object per window, so a test drives it with a fake Webamp
 // class (tests/js/webamp-host.test.mjs).
@@ -53,6 +55,12 @@ export async function createHost(element, callbacks, options = {}, deps = {}) {
         createObjectURL: deps.createObjectURL ?? (blob => URL.createObjectURL(blob)),
         revokeObjectURL: deps.revokeObjectURL ?? (url => URL.revokeObjectURL(url)),
     });
+    const interceptor = deps.interceptor ?? (deps.element && globalThis.document && globalThis.HTMLInputElement
+        ? FilePromptInterceptor.shared(globalThis.document, globalThis.HTMLInputElement.prototype)
+        : null);
+    if (interceptor) {
+        host.attachInterceptor(interceptor, deps.element);
+    }
     await host.webamp.renderInto(element);
     return host;
 }
@@ -74,7 +82,8 @@ export function create(element, dotNet, options = {}) {
         onMinimize: () => send('OnWebampMinimized'),
         onTrackChanged: track => send('OnTrackChanged', track),
         onPlaylistChanged: keys => send('OnPlaylistChanged', keys),
-    }, options);
+        onOpenRequested: kind => send('OnOpenRequested', kind),
+    }, options, { element });
 }
 
 /** One Webamp instance and the Blob addresses of the tracks it was given. */
@@ -133,6 +142,19 @@ export class WebampHost {
         if (!play) {
             this.webamp.stop();
         }
+    }
+
+    /**
+     * Sends Webamp's file prompts of this window to C# (decision 16).
+     * @param {FilePromptInterceptor} interceptor The page's interceptor.
+     * @param {Element} element The element Webamp renders into.
+     */
+    attachInterceptor(interceptor, element) {
+        const detach = interceptor.attach({
+            owns: target => ownsTarget(element, target),
+            onPrompt: kind => this._callbacks.onOpenRequested?.(kind),
+        });
+        this._unsubscribe.push(detach);
     }
 
     /** @returns {string[]} The C# keys of the tracks in Webamp's list, in its order. */
@@ -216,4 +238,175 @@ export function describeTrack(track) {
         artist: track.metaData?.artist ?? null,
         title: track.metaData?.title ?? null,
     };
+}
+
+/** Where Webamp draws its context menus: a node of its own, at the end of the page (outside the window). */
+const CONTEXT_MENU_SELECTOR = '#webamp-context-menu';
+
+/**
+ * Whether an event target belongs to the Webamp of one window: inside the element it renders into,
+ * or in Webamp's context menu (the app runs one Webamp per user, decision 5).
+ * @param {{ contains?: (node: any) => boolean }} element The element Webamp renders into.
+ * @param {{ closest?: (selector: string) => any } | null | undefined} target The event target.
+ * @returns {boolean}
+ */
+export function ownsTarget(element, target) {
+    if (target == null || typeof target.closest !== 'function') {
+        return false;
+    }
+    return element.contains(target) || target.closest(CONTEXT_MENU_SELECTOR) != null;
+}
+
+/**
+ * Names the file prompt Webamp is opening, from the input it built and the element the user chose
+ * (decision 16 of doc/en/plan.md).
+ *
+ * Webamp opens every file prompt the same way (fileUtils.ts, promptForFileReferences): a new
+ * `<input type="file" multiple>`, never put in the page, and `input.click()`. Its "open" commands
+ * give no option to replace that picker, so the host recognises them by the input:
+ * - `webkitdirectory` set: "ADD ▸ Add dir", → `add-folder`;
+ * - an `accept` filter (`.zip, .wsz` for skins, `.eqf` for equalizer presets): not music, left to
+ *   the browser (skins are work item 4);
+ * - otherwise music: "ADD ▸ Add file" (`.add-file`) → `add-files`, the eject buttons and
+ *   "Play ▸ File…" → `open`.
+ * @param {{ accept?: string | null, webkitdirectory?: boolean, directory?: boolean, getAttribute?: (name: string) => string | null }} input
+ * @param {{ closest?: (selector: string) => any } | null | undefined} target The element clicked.
+ * @returns {'open' | 'add-files' | 'add-folder' | null} The command, or null to let the browser open its picker.
+ */
+export function classifyFilePrompt(input, target) {
+    if (input.webkitdirectory || input.directory) {
+        return 'add-folder';
+    }
+    const accept = input.accept ?? input.getAttribute?.('accept') ?? '';
+    if (accept !== '') {
+        return null;
+    }
+    if (target != null && typeof target.closest === 'function' && target.closest('.add-file') != null) {
+        return 'add-files';
+    }
+    return 'open';
+}
+
+/**
+ * Stops the browser's file picker that Webamp opens for music, and tells C# instead.
+ *
+ * It listens, in the capture phase, to the clicks and keys of the page: when the target belongs to
+ * a Webamp window, it is "armed" until the event is over (Webamp builds and clicks its input while
+ * it handles the event, synchronously). `HTMLInputElement.prototype.click` is wrapped once for the
+ * page: called on a file input while armed, it asks `classifyFilePrompt` and, for music, calls the
+ * window instead of opening the picker. Webamp's own promise then never resolves, which only leaves
+ * one empty input to the garbage collector. Every other click on an input (the File Explorer's
+ * upload, a skin) goes to the browser as before, and the wrapper is removed with the last window.
+ */
+export class FilePromptInterceptor {
+    /**
+     * The interceptor of a page (one for every Webamp window of the page).
+     * @param {Document} document The page.
+     * @param {object} inputPrototype `HTMLInputElement.prototype`.
+     * @returns {FilePromptInterceptor}
+     */
+    static shared(document, inputPrototype) {
+        const key = Symbol.for('ca.kazo.webamp.file-prompt-interceptor');
+        document[key] ??= new FilePromptInterceptor(document, inputPrototype);
+        return document[key];
+    }
+
+    /**
+     * @param {{ addEventListener: Function, removeEventListener: Function }} document The page.
+     * @param {{ click: Function }} inputPrototype `HTMLInputElement.prototype`, or a fake.
+     * @param {{ defer?: (callback: () => void) => void }} [deps] Replaced by the tests.
+     */
+    constructor(document, inputPrototype, deps = {}) {
+        this._document = document;
+        this._prototype = inputPrototype;
+        this._defer = deps.defer ?? (callback => setTimeout(callback, 0));
+        /** @type {Set<{ owns: (target: any) => boolean, onPrompt: (kind: string) => void }>} */
+        this._windows = new Set();
+        this._armed = null;
+        this._originalClick = null;
+        this._onEvent = event => this._arm(event);
+    }
+
+    /** @returns {boolean} Whether `click` is wrapped now. */
+    get installed() {
+        return this._originalClick !== null;
+    }
+
+    /**
+     * Adds a Webamp window.
+     * @param {{ owns: (target: any) => boolean, onPrompt: (kind: string) => void }} window Its targets and what it hears.
+     * @returns {() => void} Removes it again.
+     */
+    attach(window) {
+        this._windows.add(window);
+        this._install();
+        return () => {
+            this._windows.delete(window);
+            if (this._windows.size === 0) {
+                this._uninstall();
+            }
+        };
+    }
+
+    _install() {
+        if (this.installed) {
+            return;
+        }
+        const original = this._prototype.click;
+        this._originalClick = original;
+        const interceptor = this;
+        this._prototype.click = function click(...args) {
+            if (interceptor._intercept(this)) {
+                return undefined;
+            }
+            return original.apply(this, args);
+        };
+        for (const type of ['click', 'keydown']) {
+            this._document.addEventListener(type, this._onEvent, true);
+        }
+    }
+
+    _uninstall() {
+        if (!this.installed) {
+            return;
+        }
+        this._prototype.click = this._originalClick;
+        this._originalClick = null;
+        this._armed = null;
+        for (const type of ['click', 'keydown']) {
+            this._document.removeEventListener(type, this._onEvent, true);
+        }
+    }
+
+    // Capture phase, before Webamp: remember which window the event belongs to, until it is over.
+    _arm(event) {
+        const target = event.target;
+        for (const window of this._windows) {
+            if (window.owns(target)) {
+                const armed = { window, target };
+                this._armed = armed;
+                this._defer(() => {
+                    if (this._armed === armed) {
+                        this._armed = null;
+                    }
+                });
+                return;
+            }
+        }
+    }
+
+    _intercept(input) {
+        const armed = this._armed;
+        if (armed === null || input == null || input.type !== 'file') {
+            return false;
+        }
+        const kind = classifyFilePrompt(input, armed.target);
+        if (kind === null) {
+            return false;
+        }
+        // One prompt per event: a second click() in the same event opens nothing either.
+        this._armed = null;
+        armed.window.onPrompt(kind);
+        return true;
+    }
 }

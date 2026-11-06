@@ -2,7 +2,7 @@
 // fake Webamp: the options, the Blob addresses (created, kept while listed, given back), the events.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHost, describeTrack, webampOptions } from '../../src/Kazo.Webamp/wwwroot/js/webamp-host.js';
+import { FilePromptInterceptor, classifyFilePrompt, createHost, describeTrack, ownsTarget, webampOptions } from '../../src/Kazo.Webamp/wwwroot/js/webamp-host.js';
 
 /** Just enough of Webamp 2.3.1's public API, with a store that notifies on every change. */
 class FakeWebamp {
@@ -191,4 +191,141 @@ test('dispose stops the music, removes Webamp, gives every address back and igno
 test('describeTrack keeps the artist and the title only', () => {
     assert.equal(describeTrack(null), null);
     assert.deepEqual(describeTrack({ metaData: {} }), { artist: null, title: null });
+});
+
+// ---- Decision 16: Webamp's file prompts go to the OS dialogs (FilePromptInterceptor). ----
+
+/** An element of the page: `closest` answers for the selectors it is listed under. */
+const element = (...selectors) => ({ closest: selector => (selectors.includes(selector) ? {} : null) });
+
+/** The input Webamp builds in promptForFileReferences. */
+const fileInput = ({ accept = '', directory = false } = {}) => ({ type: 'file', accept, webkitdirectory: directory });
+
+/** A page: capture listeners, an input prototype whose real click() is recorded, deferred callbacks. */
+const page = () => {
+    const listeners = new Map();
+    const opened = [];
+    const deferred = [];
+    const prototype = { click() { opened.push(this); } };
+    const document = {
+        addEventListener: (type, listener, capture) => listeners.set(`${type}:${capture}`, listener),
+        removeEventListener: (type, listener, capture) => {
+            if (listeners.get(`${type}:${capture}`) === listener) {
+                listeners.delete(`${type}:${capture}`);
+            }
+        },
+    };
+    const interceptor = new FilePromptInterceptor(document, prototype, { defer: callback => deferred.push(callback) });
+    return {
+        interceptor,
+        prototype,
+        opened,
+        listeners,
+        // The user clicks `target`; during the event, Webamp clicks `input`.
+        click(target, input) {
+            listeners.get('click:true')?.({ target });
+            if (input) {
+                prototype.click.call(input);
+            }
+        },
+        endOfEvent() {
+            deferred.splice(0).forEach(callback => callback());
+        },
+    };
+};
+
+test('classifyFilePrompt names the music prompts and leaves skins and presets to the browser', () => {
+    assert.equal(classifyFilePrompt(fileInput(), element('#eject')), 'open');
+    assert.equal(classifyFilePrompt(fileInput(), element('#webamp-context-menu')), 'open');
+    assert.equal(classifyFilePrompt(fileInput(), element('.add-file', '#playlist-add-menu')), 'add-files');
+    assert.equal(classifyFilePrompt(fileInput({ directory: true }), element('.add-dir')), 'add-folder');
+    assert.equal(classifyFilePrompt(fileInput({ accept: '.zip, .wsz' }), element('#webamp-context-menu')), null);
+    assert.equal(classifyFilePrompt(fileInput({ accept: '.eqf' }), element('#equalizer-window')), null);
+});
+
+test('ownsTarget: the window\'s element and Webamp\'s context menu, nothing else', () => {
+    const inside = element();
+    const surface = { contains: node => node === inside };
+    assert.equal(ownsTarget(surface, inside), true);
+    assert.equal(ownsTarget(surface, element('#webamp-context-menu')), true);
+    assert.equal(ownsTarget(surface, element()), false);
+    assert.equal(ownsTarget(surface, null), false);
+    assert.equal(ownsTarget(surface, {}), false);
+});
+
+test('a music prompt of a Webamp window opens no browser picker and reaches C#', () => {
+    const p = page();
+    const prompts = [];
+    const eject = element('#eject');
+    p.interceptor.attach({ owns: target => target === eject, onPrompt: kind => prompts.push(kind) });
+
+    p.click(eject, fileInput());
+
+    assert.deepEqual(prompts, ['open']);
+    assert.deepEqual(p.opened, []);
+});
+
+test('outside Webamp, after the event, and for skins, the browser picker opens as before', () => {
+    const p = page();
+    const prompts = [];
+    const eject = element('#eject');
+    p.interceptor.attach({ owns: target => target === eject, onPrompt: kind => prompts.push(kind) });
+
+    // The File Explorer's upload button.
+    const upload = fileInput();
+    p.click(element('.explorer-upload'), upload);
+    // A skin from Webamp's menu (work item 4).
+    const skin = fileInput({ accept: '.zip, .wsz' });
+    p.click(eject, skin);
+    p.endOfEvent();
+    // A file input clicked later, by something else.
+    const later = fileInput();
+    p.prototype.click.call(later);
+    // Not a file input.
+    const button = { type: 'button' };
+    p.click(eject, button);
+
+    assert.deepEqual(prompts, []);
+    assert.deepEqual(p.opened, [upload, skin, later, button]);
+});
+
+test('one event asks C# once, and the wrapper goes away with the last window', () => {
+    const p = page();
+    const prompts = [];
+    const original = p.prototype.click;
+    const addFile = element('.add-file');
+    const detach = p.interceptor.attach({ owns: () => true, onPrompt: kind => prompts.push(kind) });
+    assert.equal(p.interceptor.installed, true);
+    assert.notEqual(p.prototype.click, original);
+
+    p.click(addFile, fileInput());
+    p.prototype.click.call(fileInput());
+
+    assert.deepEqual(prompts, ['add-files']);
+    assert.equal(p.opened.length, 1);
+
+    detach();
+    assert.equal(p.interceptor.installed, false);
+    assert.equal(p.prototype.click, original);
+    assert.equal(p.listeners.size, 0);
+});
+
+test('a host given an interceptor reports the prompts of its element and detaches on dispose', async () => {
+    const p = page();
+    const requests = [];
+    const surface = { contains: node => node?.inSurface === true };
+    const host = await createHost(surface, { onOpenRequested: kind => requests.push(kind) }, {}, {
+        Webamp: FakeWebamp,
+        interceptor: p.interceptor,
+        element: surface,
+        createObjectURL: () => 'blob:x',
+        revokeObjectURL: () => {},
+    });
+    const addDir = { inSurface: true, closest: () => null };
+
+    p.click(addDir, fileInput({ directory: true }));
+    assert.deepEqual(requests, ['add-folder']);
+
+    host.dispose();
+    assert.equal(p.interceptor.installed, false);
 });

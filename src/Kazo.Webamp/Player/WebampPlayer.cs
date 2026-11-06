@@ -44,6 +44,12 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     /// <summary>Raised with the keys of <see cref="TrackLibrary"/> still in Webamp's list, in its order.</summary>
     public event Action<IReadOnlyList<string>>? PlaylistChanged;
 
+    /// <summary>
+    /// Raised when the user chose one of Webamp's "open" commands: the browser's file picker was
+    /// stopped, the window shows the OS dialog (decision 16).
+    /// </summary>
+    public event Func<WebampOpenKind, Task>? OpenRequested;
+
     /// <summary>Gets whether Webamp is on screen.</summary>
     public bool IsStarted => _host is not null;
 
@@ -82,6 +88,24 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     /// <param name="track">Its tags, or <see langword="null"/> when none plays.</param>
     [JSInvokable]
     public Task OnTrackChanged(WebampTrackInfo? track) => TrackChanged?.Invoke(track) ?? Task.CompletedTask;
+
+    /// <summary>Called by the host module when the user chose one of Webamp's "open" commands.</summary>
+    /// <param name="kind"><c>open</c>, <c>add-files</c> or <c>add-folder</c>; another value is ignored.</param>
+    [JSInvokable]
+    public Task OnOpenRequested(string kind) => ParseOpenKind(kind) is { } parsed && OpenRequested is { } handler
+        ? handler(parsed)
+        : Task.CompletedTask;
+
+    /// <summary>Reads the name the host module gives a command.</summary>
+    /// <param name="kind"><c>open</c>, <c>add-files</c> or <c>add-folder</c>.</param>
+    /// <returns>The command, or <see langword="null"/> for another value.</returns>
+    public static WebampOpenKind? ParseOpenKind(string? kind) => kind switch
+    {
+        "open" => WebampOpenKind.Open,
+        "add-files" => WebampOpenKind.AddFiles,
+        "add-folder" => WebampOpenKind.AddFolder,
+        _ => null,
+    };
 
     /// <summary>Called by the host module when the tracks of Webamp's list changed.</summary>
     /// <param name="keys">The keys still listed, in order.</param>

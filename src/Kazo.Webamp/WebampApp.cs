@@ -1,4 +1,8 @@
 using Kazo.Os.App.Abstractions;
+using Kazo.Os.AppSdk.Blazor.Files;
+using Kazo.Os.AppSdk.Files;
+using Kazo.Os.AppSdk.Icons;
+using Kazo.Webamp.Tracks;
 
 namespace Kazo.Webamp;
 
@@ -8,7 +12,8 @@ namespace Kazo.Webamp;
 /// </summary>
 /// <remarks>
 /// Work item 1 declares the base: the window, desktop only, one window per user, reading the
-/// user's music and the app's own folder. Work items 2 to 5 add their file types and capabilities.
+/// user's music and the app's own folder. Work item 2 adds the audio types (Webamp becomes the app
+/// that opens them), the OS dialogs and the two file menu entries. Work items 3 to 5 add theirs.
 /// </remarks>
 [AppManifest]
 public sealed class WebampApp : AppDefinition
@@ -18,6 +23,18 @@ public sealed class WebampApp : AppDefinition
 
     /// <summary>Height of Webamp's three windows stacked at normal size.</summary>
     public const int ContentHeight = 348;
+
+    /// <summary>
+    /// The intent of the two file menu entries (decision 5): the payload names the entry,
+    /// <see cref="PlayEntry"/> or <see cref="EnqueueEntry"/>, and the files or folders.
+    /// </summary>
+    public const string FilesIntent = "ca.kazo.webamp.files.v1";
+
+    /// <summary>Name of the "Play in Webamp" entry: add at the end of the list and play.</summary>
+    public const string PlayEntry = "play";
+
+    /// <summary>Name of the "Add to Webamp's list" entry: add at the end of the list, without playing.</summary>
+    public const string EnqueueEntry = "enqueue";
 
     /// <inheritdoc />
     public override string Id => "ca.kazo.webamp";
@@ -58,7 +75,62 @@ public sealed class WebampApp : AppDefinition
         // ~/.config/ca.kazo.webamp/ (the state of work item 5).
         AppCapabilities.FileSystemPrivateRead,
         AppCapabilities.FileSystemPrivateWrite,
+        // Webamp's "Open" and "Add file" (decision 16).
+        AppCapabilities.DialogFileOpen,
+        // Webamp's "Add dir" (decision 16).
+        AppCapabilities.DialogFolderSelect,
+        // "Play in Webamp" and "Add to Webamp's list" in the file menus (decision 5).
+        AppCapabilities.ShellContextMenu,
     ];
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Decision 4: the formats browsers play. No other OS app opens audio, so Webamp is their
+    /// default app; each type comes from <see cref="AudioMediaTypes"/>, which also types the Blob.
+    /// </remarks>
+    public override IReadOnlyList<FileHandler> FileHandlers =>
+    [
+        new("audio/mpeg", [".mp3"], ["open"]),
+        new("audio/wav", [".wav"], ["open"]),
+        new("audio/ogg", [".ogg", ".oga"], ["open"]),
+        new("audio/opus", [".opus"], ["open"]),
+        new("audio/flac", [".flac"], ["open"]),
+        new("audio/mp4", [".m4a"], ["open"]),
+        new("audio/aac", [".aac"], ["open"]),
+        new("audio/webm", [".weba"], ["open"]),
+    ];
+
+    /// <inheritdoc />
+    public override IReadOnlyList<AppIntentDeclarationManifest> Intents => [new(FilesIntent)];
+
+    /// <summary>
+    /// The file menu entries (decision 5, ADR 0151 and 0159 of Kazo OS): "Play in Webamp" and "Add to
+    /// Webamp's list", on audio files and on folders (a folder brings its audio files and those of
+    /// its subfolders, sorted by path). One launch carries the whole selection, in its order.
+    /// </summary>
+    /// <param name="context">Records the entries; the build writes them to manifest.json.</param>
+    [RegisterFileContextMenu]
+    public static void RegisterFileContextMenu(RegisterFileContextMenuContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        IReadOnlyList<string> types = [.. AudioMediaTypes.Extensions.Order(StringComparer.Ordinal), "inode/directory"];
+        context.Register(
+            title: "Menu.Play",
+            name: PlayEntry,
+            intent: FilesIntent,
+            icon: KazoIcons.Vector(IconLibrary.Lucide, "play"),
+            scope: FileMenuScope.File | FileMenuScope.Directory,
+            types: types,
+            after: KazoFileMenuItems.Open);
+        context.Register(
+            title: "Menu.Enqueue",
+            name: EnqueueEntry,
+            intent: FilesIntent,
+            icon: KazoIcons.Vector(IconLibrary.Lucide, "list-plus"),
+            scope: FileMenuScope.File | FileMenuScope.Directory,
+            types: types,
+            after: PlayEntry);
+    }
 
     /// <inheritdoc />
     public override IReadOnlyList<string> Icons => ["icons/app.svg"];

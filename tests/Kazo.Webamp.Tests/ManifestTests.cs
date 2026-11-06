@@ -27,12 +27,59 @@ public sealed class ManifestTests
     }
 
     [Fact]
-    public void The_app_asks_only_for_the_base_capabilities_none_dangerous()
+    public void The_app_asks_for_its_capabilities_none_dangerous()
     {
         Assert.Equal(
-            new[] { AppCapabilities.FileSystemUserHomeRead, AppCapabilities.FileSystemPrivateRead, AppCapabilities.FileSystemPrivateWrite },
+            new[]
+            {
+                AppCapabilities.FileSystemUserHomeRead, AppCapabilities.FileSystemPrivateRead, AppCapabilities.FileSystemPrivateWrite,
+                AppCapabilities.DialogFileOpen, AppCapabilities.DialogFolderSelect, AppCapabilities.ShellContextMenu,
+            },
             _app.Capabilities);
-        Assert.DoesNotContain(AppCapabilities.FileSystemSystemRead, _app.Capabilities);
+        Assert.DoesNotContain(_app.Capabilities, AppCapabilities.IsDangerous);
+    }
+
+    [Fact]
+    public void Webamp_opens_the_audio_formats_browsers_play()
+    {
+        Dictionary<string, string?> byExtension = _app.FileHandlers
+            .SelectMany(handler => handler.Extensions.Select(extension => (extension, handler.MediaType)))
+            .ToDictionary(pair => pair.extension, pair => pair.MediaType);
+
+        Assert.Equal(
+            [".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".weba"],
+            byExtension.Keys.Order(StringComparer.Ordinal));
+        foreach ((string extension, string? mediaType) in byExtension)
+        {
+            Assert.Equal(Kazo.Webamp.Tracks.AudioMediaTypes.ForFile("x" + extension), mediaType);
+        }
+
+        Assert.All(_app.FileHandlers, handler => Assert.Equal(["open"], handler.Actions));
+    }
+
+    [Fact]
+    public void The_two_file_menu_entries_are_declared_with_their_intent_on_audio_files_and_folders()
+    {
+        Assert.Equal([WebampApp.FilesIntent], _app.Intents.Select(intent => intent.IntentId));
+
+        string manifest = File.ReadAllText(Path.Combine(RepositoryRoot(), "src", "Kazo.Webamp", "manifest.json"));
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(manifest);
+        System.Text.Json.JsonElement[] entries = [.. document.RootElement.GetProperty("contextMenus").EnumerateArray()];
+        Assert.Equal([WebampApp.PlayEntry, WebampApp.EnqueueEntry], entries.Select(entry => entry.GetProperty("name").GetString()));
+        foreach (System.Text.Json.JsonElement entry in entries)
+        {
+            Assert.Equal(WebampApp.FilesIntent, entry.GetProperty("intent").GetString());
+            Assert.Equal(["file", "directory"], entry.GetProperty("scopes").EnumerateArray().Select(scope => scope.GetString()));
+            string?[] types = [.. entry.GetProperty("types").EnumerateArray().Select(type => type.GetString())];
+            Assert.Contains("inode/directory", types);
+            Assert.Contains(".mp3", types);
+            Assert.Equal("all", entry.GetProperty("selection").GetString());
+        }
+
+        Assert.Equal(
+            ["Lire dans Webamp", "Ajouter à la liste de Webamp"],
+            entries.Select(entry => entry.GetProperty("titles").EnumerateArray()
+                .Single(title => title.GetProperty("culture").GetString() == "fr").GetProperty("text").GetString()));
     }
 
     [Fact]

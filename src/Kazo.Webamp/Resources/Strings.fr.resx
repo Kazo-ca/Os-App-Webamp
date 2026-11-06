@@ -24,4 +24,25 @@
   <data name="StartFailed" xml:space="preserve">
     <value>Webamp n’a pas pu démarrer : {0}</value>
   </data>
+  <data name="AddFilesTitle" xml:space="preserve">
+    <value>Ajouter des fichiers à Webamp</value>
+  </data>
+  <data name="AddFolderTitle" xml:space="preserve">
+    <value>Ajouter un dossier à Webamp</value>
+  </data>
+  <data name="AudioFilter" xml:space="preserve">
+    <value>Fichiers audio</value>
+  </data>
+  <data name="MemoryWarning" xml:space="preserve">
+    <value>La musique de la liste de Webamp occupe maintenant {0} Go de mémoire. Au-delà de 1 Go, le navigateur peut ralentir ou fermer la page. Vous pouvez continuer ; retirer des morceaux de la liste libère leur mémoire.</value>
+  </data>
+  <data name="MemoryWarningTitle" xml:space="preserve">
+    <value>Webamp : beaucoup de musique en mémoire</value>
+  </data>
+  <data name="NoAudioFiles" xml:space="preserve">
+    <value>{0} ne contient aucun fichier audio que Webamp sait lire.</value>
+  </data>
+  <data name="OpenTitle" xml:space="preserve">
+    <value>Ouvrir dans Webamp</value>
+  </data>
 </root>
