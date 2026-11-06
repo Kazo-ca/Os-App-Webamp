@@ -57,6 +57,16 @@ public sealed class AudioFileCollectorTests
     }
 
     [Fact]
+    public async Task A_playlist_stays_for_PlaylistFiles_to_read_but_the_lists_of_a_folder_are_not_read()
+    {
+        _folders["/home/neo/Lists"] = ["/home/neo/Lists/all.m3u8", "/home/neo/Lists/one.mp3"];
+
+        AudioFiles found = await CreateCollector().CollectAsync([P("/home/neo/mix.pls"), P("/home/neo/Lists")]);
+
+        Assert.Equal(["/home/neo/mix.pls", "/home/neo/Lists/one.mp3"], found.Files.Select(file => file.Value));
+    }
+
+    [Fact]
     public async Task A_folder_that_cannot_be_listed_is_reported_and_the_rest_is_kept()
     {
         AudioFiles found = await CreateCollector().CollectAsync([P("/home/neo/Locked"), P("/home/neo/one.m4a")]);

@@ -15,6 +15,9 @@ export const TONE = path.join(root, 'tests', 'e2e', 'fixtures', 'tone.mp3');
 /** A second track, told apart by its title: "Kazo Test - Tone 220" (fixtures/make-tone.sh). */
 export const TONE_220 = path.join(root, 'tests', 'e2e', 'fixtures', 'tone-220.mp3');
 
+/** A .m3u next to the tone: the tone, a missing file and a web address (fixtures/tones.m3u). */
+export const TONES_LIST = path.join(root, 'tests', 'e2e', 'fixtures', 'tones.m3u');
+
 // The first WebAssembly boot downloads and compiles the whole OS: give it time.
 export const BOOT_TIMEOUT_MS = 120_000;
 
@@ -105,9 +108,20 @@ export async function uploadToHome(page, files, { openExplorer = true } = {}) {
     const list = Array.isArray(files) ? files : [files];
     const input = page.locator('input[type=file]').first();
     await input.waitFor({ state: 'attached', timeout: 30_000 });
-    await input.setInputFiles(list);
-    for (const file of list) {
-        await page.getByText(path.basename(file), { exact: true }).first().waitFor({ timeout: 30_000 });
+    // The input is in the page before the explorer has listed the folder and wired its change
+    // handler: files set that early are lost. Set them again if they still do not show.
+    for (let attempt = 0; ; attempt++) {
+        await input.setInputFiles(list);
+        try {
+            for (const file of list) {
+                await page.getByText(path.basename(file), { exact: true }).first().waitFor({ timeout: 15_000 });
+            }
+            return;
+        } catch (error) {
+            if (attempt === 1) {
+                throw error;
+            }
+        }
     }
 }
 
@@ -122,7 +136,8 @@ export const explorerRow = (scope, itemPath) => scope.locator(`tr[data-item-path
 const ROW_RIGHT = { x: 420, y: 10 };
 
 /**
- * Selects rows of the File Explorer (Ctrl for the next ones) and opens the file menu on the last one.
+ * Selects rows of the File Explorer (Ctrl for the next ones) and opens the file menu from the
+ * keyboard (Shift+F10), which keeps the selection.
  * @param {import('playwright').Page} page The page.
  * @param {string[]} paths The items, in the order they are selected.
  */
@@ -130,7 +145,7 @@ export async function openFileMenu(page, paths) {
     for (const [index, itemPath] of paths.entries()) {
         await explorerRow(page, itemPath).click({ position: ROW_RIGHT, modifiers: index === 0 ? [] : ['Control'] });
     }
-    await explorerRow(page, paths.at(-1)).click({ position: ROW_RIGHT, button: 'right' });
+    await page.keyboard.press('Shift+F10');
     await page.getByRole('menu').first().waitFor({ timeout: 10_000 });
 }
 

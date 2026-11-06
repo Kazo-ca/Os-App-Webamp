@@ -2,6 +2,7 @@ using Kazo.Os.App.Abstractions;
 using Kazo.Os.AppSdk.Blazor.Files;
 using Kazo.Os.AppSdk.Files;
 using Kazo.Os.AppSdk.Icons;
+using Kazo.Webamp.Playlists;
 using Kazo.Webamp.Tracks;
 
 namespace Kazo.Webamp;
@@ -75,21 +76,29 @@ public sealed class WebampApp : AppDefinition
         // ~/.config/ca.kazo.webamp/ (the state of work item 5).
         AppCapabilities.FileSystemPrivateRead,
         AppCapabilities.FileSystemPrivateWrite,
-        // Webamp's "Open" and "Add file" (decision 16).
+        // "Save list" writes a .m3u8 where the user chose (work item 3).
+        AppCapabilities.FileSystemUserHomeWrite,
+        // Webamp's "Open", "Add file" (work item 2) and "Load list" (work item 3).
         AppCapabilities.DialogFileOpen,
-        // Webamp's "Add dir" (decision 16).
+        // Webamp's "Save list" (work item 3).
+        AppCapabilities.DialogFileSave,
+        // Webamp's "Add dir" (work item 2, decision 16).
         AppCapabilities.DialogFolderSelect,
-        // "Play in Webamp" and "Add to Webamp's list" in the file menus (decision 5).
+        // "Play in Webamp" and "Add to Webamp's list" in the file menus (work item 2, decision 5).
         AppCapabilities.ShellContextMenu,
     ];
 
     /// <inheritdoc />
     /// <remarks>
-    /// Decision 4: the formats browsers play. No other OS app opens audio, so Webamp is their
-    /// default app; each type comes from <see cref="AudioMediaTypes"/>, which also types the Blob.
+    /// Decision 4 (work item 2): the formats browsers play. No other OS app opens audio, so Webamp is
+    /// their default app; each type comes from <see cref="AudioMediaTypes"/>, which also types the
+    /// Blob. Work item 3: playlists, whose tracks are added and the first one plays (decisions 5, 10).
     /// </remarks>
     public override IReadOnlyList<FileHandler> FileHandlers =>
     [
+        new(PlaylistFormats.M3uMediaType, [".m3u"], ["open"]),
+        new(PlaylistFormats.M3u8MediaType, [".m3u8"], ["open"]),
+        new(PlaylistFormats.PlsMediaType, [".pls"], ["open"]),
         new("audio/mpeg", [".mp3"], ["open"]),
         new("audio/wav", [".wav"], ["open"]),
         new("audio/ogg", [".ogg", ".oga"], ["open"]),
@@ -105,15 +114,21 @@ public sealed class WebampApp : AppDefinition
 
     /// <summary>
     /// The file menu entries (decision 5, ADR 0151 and 0159 of Kazo OS): "Play in Webamp" and "Add to
-    /// Webamp's list", on audio files and on folders (a folder brings its audio files and those of
-    /// its subfolders, sorted by path). One launch carries the whole selection, in its order.
+    /// Webamp's list", on audio files, playlists (their tracks) and folders (a folder brings its audio
+    /// files and those of its subfolders, sorted by path). One launch carries the whole selection, in
+    /// its order.
     /// </summary>
     /// <param name="context">Records the entries; the build writes them to manifest.json.</param>
     [RegisterFileContextMenu]
     public static void RegisterFileContextMenu(RegisterFileContextMenuContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        IReadOnlyList<string> types = [.. AudioMediaTypes.Extensions.Order(StringComparer.Ordinal), "inode/directory"];
+        IReadOnlyList<string> types =
+        [
+            .. AudioMediaTypes.Extensions.Order(StringComparer.Ordinal),
+            .. PlaylistFormats.Extensions,
+            "inode/directory",
+        ];
         context.Register(
             title: "Menu.Play",
             name: PlayEntry,

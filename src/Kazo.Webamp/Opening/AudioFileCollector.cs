@@ -1,18 +1,19 @@
 using Kazo.Os.App.Abstractions;
 using Kazo.Os.AppSdk.IO;
+using Kazo.Webamp.Playlists;
 using Kazo.Webamp.Tracks;
 
 namespace Kazo.Webamp.Opening;
 
 /// <summary>
-/// Turns the paths of an <see cref="OpenRequest"/> into the audio files to add (decision 16 of
-/// doc/en/plan.md): a file stays where it is, a folder becomes its audio files and those of its
-/// subfolders, sorted by path.
+/// Turns the paths of an <see cref="OpenRequest"/> into the files to add (decision 16 of
+/// doc/en/plan.md): an audio file or a playlist stays where it is (<c>PlaylistFiles</c> then reads
+/// the playlist), a folder becomes its audio files and those of its subfolders, sorted by path (the
+/// playlists of a folder are not read: they would add its tracks twice).
 /// </summary>
 /// <remarks>
-/// A path that is neither an audio file nor a folder (a <c>.txt</c> in a mixed selection) is left
-/// out: Webamp would only show it as a broken track. A path that does not exist is kept, so the
-/// library reports it as unreadable.
+/// A path that is none of these (a <c>.txt</c> in a mixed selection) is left out: Webamp would only
+/// show it as a broken track. A path that does not exist is kept, so it is reported as unreadable.
 /// </remarks>
 public sealed class AudioFileCollector
 {
@@ -59,7 +60,7 @@ public sealed class AudioFileCollector
         _filesBelow = filesBelow;
     }
 
-    /// <summary>Gets the audio files of the paths, in order.</summary>
+    /// <summary>Gets the audio files and playlists of the paths, in order.</summary>
     /// <param name="paths">Files and folders.</param>
     /// <param name="cancellationToken">Cancels the listing.</param>
     /// <returns>The files; a folder that cannot be listed is reported in <see cref="AudioFiles.Failures"/>.</returns>
@@ -72,7 +73,7 @@ public sealed class AudioFileCollector
         {
             if (!await _isDirectory(path.Value, cancellationToken))
             {
-                if (AudioMediaTypes.ForFile(path.Value) is not null)
+                if (AudioMediaTypes.ForFile(path.Value) is not null || PlaylistFormats.IsPlaylist(path.Value))
                 {
                     files.Add(path);
                 }

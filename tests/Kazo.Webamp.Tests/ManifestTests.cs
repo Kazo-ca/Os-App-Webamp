@@ -27,22 +27,26 @@ public sealed class ManifestTests
     }
 
     [Fact]
-    public void The_app_asks_for_its_capabilities_none_dangerous()
+    public void The_app_asks_only_for_the_capabilities_it_uses_none_dangerous()
     {
         Assert.Equal(
             new[]
             {
                 AppCapabilities.FileSystemUserHomeRead, AppCapabilities.FileSystemPrivateRead, AppCapabilities.FileSystemPrivateWrite,
-                AppCapabilities.DialogFileOpen, AppCapabilities.DialogFolderSelect, AppCapabilities.ShellContextMenu,
+                AppCapabilities.FileSystemUserHomeWrite, AppCapabilities.DialogFileOpen, AppCapabilities.DialogFileSave,
+                AppCapabilities.DialogFolderSelect, AppCapabilities.ShellContextMenu,
             },
             _app.Capabilities);
         Assert.DoesNotContain(_app.Capabilities, AppCapabilities.IsDangerous);
+        Assert.DoesNotContain(AppCapabilities.FileSystemSystemRead, _app.Capabilities);
+        Assert.DoesNotContain(AppCapabilities.FileSystemSystemWrite, _app.Capabilities);
     }
 
     [Fact]
     public void Webamp_opens_the_audio_formats_browsers_play()
     {
         Dictionary<string, string?> byExtension = _app.FileHandlers
+            .Where(handler => handler.MediaType?.StartsWith("audio/", StringComparison.Ordinal) == true && handler.Extensions.All(extension => Kazo.Webamp.Tracks.AudioMediaTypes.ForFile("x" + extension) is not null))
             .SelectMany(handler => handler.Extensions.Select(extension => (extension, handler.MediaType)))
             .ToDictionary(pair => pair.extension, pair => pair.MediaType);
 
@@ -73,6 +77,7 @@ public sealed class ManifestTests
             string?[] types = [.. entry.GetProperty("types").EnumerateArray().Select(type => type.GetString())];
             Assert.Contains("inode/directory", types);
             Assert.Contains(".mp3", types);
+            Assert.Contains(".m3u8", types);
             Assert.Equal("all", entry.GetProperty("selection").GetString());
         }
 
@@ -80,6 +85,17 @@ public sealed class ManifestTests
             ["Lire dans Webamp", "Ajouter à la liste de Webamp"],
             entries.Select(entry => entry.GetProperty("titles").EnumerateArray()
                 .Single(title => title.GetProperty("culture").GetString() == "fr").GetProperty("text").GetString()));
+    }
+
+    [Theory]
+    [InlineData("audio/x-mpegurl", ".m3u")]
+    [InlineData("application/vnd.apple.mpegurl", ".m3u8")]
+    [InlineData("audio/x-scpls", ".pls")]
+    public void The_app_opens_the_three_playlist_formats(string mediaType, string extension)
+    {
+        FileHandler handler = Assert.Single(_app.FileHandlers, handler => handler.MediaType == mediaType);
+        Assert.Equal(new[] { extension }, handler.Extensions);
+        Assert.Equal(new[] { "open" }, handler.Actions);
     }
 
     [Fact]
