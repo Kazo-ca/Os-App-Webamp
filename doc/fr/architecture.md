@@ -64,7 +64,10 @@ sur <http://localhost:5290>.
 | `Tracks/ITrackPlayer.cs`, `TrackData.cs`, `TrackLoadResult.cs` | Le contrat entre la bibliothèque et Webamp (un faux dans les tests) ; un morceau envoyé (clé, nom, type, octets) ; le résultat d'un ajout. |
 | `Tracks/AudioMediaTypes.cs` | Extension → type audio (décision 4), donné au `Blob` pour que le navigateur choisisse le bon décodeur. |
 | `Strings.cs`, `Resources/` | Textes en anglais et en français (ADR 0104 de Kazo OS), nom et description traduits du manifeste (`AppManifest.fr.resx`). |
+| `WebampWindow.Skins.cs` | Les skins de la fenêtre (chantier 4, [Skins](#skins)) : ouvrir un `.wsz`, « Load Skin… », skin choisi retenu, skin refusé avec un message, notification d'explication. |
+| `Skins/` | `SkinArchive` (un `.wsz` est-il un skin ?), `SkinLibrary` (le dossier `~/.local/share/webamp/skins/`), `SkinSettings` (`~/.config/ca.kazo.webamp/skins.json`), `SkinController` (le tout pour une fenêtre), `ISkinFileSystem` et `KazoSkinFileSystem` (les fichiers, en mémoire dans les tests), `ISkinPlayer` (ce que les skins demandent à Webamp). |
 | `wwwroot/js/webamp-host.js` | Le module JavaScript (ci-dessous). |
+| `wwwroot/js/webamp-skins.js` | Le pont du menu Skins de Webamp (voir [Skins](#skins)). |
 | `wwwroot/lib/` | Webamp 2.3.1, Butterchurn et ses préréglages, chacun avec sa licence ([THIRD-PARTY-NOTICES.md](../../THIRD-PARTY-NOTICES.md)). |
 | `wwwroot/icons/app.svg` | L'icône. |
 
@@ -87,13 +90,16 @@ WebampWindow ── TrackLibrary ── lit ──► KazoFile.ReadAllBytesAsync
 
 | Appel | Sens | Contenu |
 | --- | --- | --- |
-| `create(élément, dotNet, { zIndex })` | C# → JS | Charge `lib/webamp/webamp.bundle.min.mjs`, crée Webamp avec `enableHotkeys: false` (décision 17) et un `handleAddUrlEvent` qui ne fait rien (décision 9), le dessine dans l'élément. Rend un objet hôte (une `IJSObjectReference`). |
+| `create(élément, dotNet, { zIndex, skins, initialSkin })` | C# → JS | Charge `lib/webamp/webamp.bundle.min.mjs`, crée Webamp avec `enableHotkeys: false` (décision 17), un `handleAddUrlEvent` qui ne fait rien (décision 9), les skins du dossier de l'utilisateur (`availableSkins`) et le skin en cours (`initialSkin`), le dessine dans l'élément. Rend un objet hôte (une `IJSObjectReference`). Un skin est `{ key, name, bytes }` ; `key` est son nom de fichier dans le dossier. |
+| `addSkin(skin, apply)` | C# → JS | Ajoute un skin au menu Skins (ou remplace celui de même clé, dont l'adresse est rendue) ; avec `apply`, le met et attend que Webamp l'ait dessiné. |
 | `addTracks(morceaux, play)` | C# → JS | Ajoute à la fin de la liste ; avec `play`, le premier ajouté joue. Un morceau est `{ key, name, mimeType, bytes }` ; `bytes` est le `byte[]` du C#, reçu en `Uint8Array`. |
 | `replaceTracks(morceaux, play)` | C# → JS | Remplace la liste (`setTracksToPlay`) ; sans `play`, Webamp est arrêté. |
 | `dispose()` | C# → JS | Arrête la musique, retire Webamp, rend toutes les adresses. |
 | `OnPlaylistChanged(clés)` | JS → C# | Les clés encore dans la liste, dans son ordre, à chaque changement réel (pas à chaque tic de l'horloge de Webamp). |
 | `OnTrackChanged({ artist, title } \| null)` | JS → C# | Le morceau qui commence (pour le titre de la fenêtre du chantier 5). |
 | `OnWebampClosed()`, `OnWebampMinimized()` | JS → C# | Les boutons fermer et réduire de Webamp. |
+| `OnSkinFileChosen(nom, octets)` | JS → C# | Un skin de l'ordinateur (« Skins ▸ Load Skin… » ou déposé sur Webamp), pas encore mis. |
+| `OnSkinChosen(clé \| null)` | JS → C# | Un skin choisi dans le menu Skins (Webamp le met lui-même) ; `null` pour « &lt;Base Skin&gt; ». |
 
 **Les `Blob`.** Pour chaque morceau, le module crée un `Blob` typé et son
 adresse (`URL.createObjectURL`) et donne à Webamp un morceau **par adresse**
@@ -141,13 +147,60 @@ le démarrage.
 - Webamp ajoute ses styles dans la page lui-même ; le `.razor` n'a ni style ni
   script en ligne (ADR 0007).
 
+## Skins
+
+Décisions 11 et 20 du [plan](plan.md).
+
+- **Le dossier.** Chaque skin ouvert ou chargé est copié dans
+  `~/.local/share/webamp/skins/` (capacité `filesystem.user-home.write`), sous
+  son propre nom de fichier, rendu sûr (sans chemin ni caractère de contrôle)
+  et terminé par `.wsz` (un `.zip` devient un `.wsz`). Un skin du même nom
+  remplace l'ancien. Au démarrage, `SkinLibrary` relit le dossier : chaque
+  `.wsz` valide devient une entrée du menu Skins de Webamp, triée par nom ; un
+  fichier illisible ou qui n'est pas un skin est laissé là et pas listé.
+- **Un skin valide.** `SkinArchive` vérifie en C#, avant toute copie et avant
+  Webamp : une archive ZIP d'au plus 16 Mo qui contient `main.bmp` (à la
+  racine ou dans un dossier, casse ignorée). Sinon une boîte de message
+  (« Bento.wsz n'a pas été chargé : … Le skin en cours reste. ») et rien n'est
+  envoyé à Webamp. Webamp, lui, ne sait signaler un skin cassé que par un
+  `alert` du navigateur.
+- **Ouvrir un `.wsz` dans l'OS** (double-clic, « Ouvrir avec », `webamp
+  skin.wsz`) : type associé `application/x-winamp-skin` `.wsz` ; au lancement
+  (`LaunchFile`) ou dans la fenêtre déjà ouverte (`OnIntentReceivedAsync`, une
+  fenêtre par utilisateur), le skin est copié, ajouté au menu et mis. Un `.wsz`
+  qui est déjà dans le dossier est seulement mis.
+- **« Skins ▸ Load Skin… » de Webamp.** Webamp 2.3.1 n'a pas d'option pour ce
+  menu : il ouvre son propre `input type=file` et applique le fichier sans le
+  rendre. `webamp-skins.js` écoute les clics de la page en phase de capture
+  (avant Webamp) et reconnaît l'entrée par sa place dans le menu de Webamp
+  (`#webamp-context-menu`, sous-menu dont le texte est « Skins » : « Load
+  Skin... », un séparateur, « &lt;Base Skin&gt; », puis les skins dans l'ordre
+  donné). Pour « Load Skin… », il arrête le clic, ferme le menu, ouvre le
+  sélecteur de fichiers du navigateur (fichier de l'ordinateur, décision 11) et
+  envoie le fichier au C#, qui le vérifie, le copie et le met. Un seul `.wsz`
+  ou `.zip` déposé sur Webamp suit le même chemin.
+- **Skin retenu.** Un skin choisi dans le menu est mis par Webamp lui-même ; le
+  module rapporte lequel (`OnSkinChosen`, par sa place dans le menu) et
+  `SkinSettings` l'écrit dans `~/.config/ca.kazo.webamp/skins.json`
+  (`{ "current": "Bento.wsz", "importTipShown": true }`). Au lancement suivant,
+  Webamp démarre avec ce skin (`initialSkin`) ; un skin retenu qui n'est plus
+  dans le dossier redonne le skin de base. Le chantier 5 pourra reprendre le
+  skin dans son `state.json`.
+- **Explication de l'import** (décision 20). Au premier lancement, une
+  notification (`notifications.post`) : « Pour changer de skin : double-cliquez
+  un fichier .wsz, ou clic droit ▸ Skins ▸ Load Skin… ». `importTipShown` passe
+  à `true` une fois la notification postée ; si elle est refusée, elle sera
+  tentée au lancement suivant. Même texte dans le README.
+- **Mémoire.** Les skins sont donnés à Webamp en adresses `blob:` créées par le
+  module et rendues quand un skin est remplacé et à `dispose`.
+
 ## Tests
 
 | Suite | Commande | Contenu |
 | --- | --- | --- |
-| C# (xUnit) | `dotnet test Kazo.Webamp.slnx -c Release` | Manifeste ; `TrackLibrary` : ajout dans l'ordre avec le type, ajout à la fin, fichier illisible, rien envoyé quand rien ne se lit, morceau sorti de la liste oublié, ordre de Webamp, remplacement, changements de liste pendant l'ajout, échec de Webamp ; types audio. |
-| JavaScript | `npm test` | `webamp-host.js` avec un faux Webamp : options, adresses créées, gardées pendant l'arrivée d'un lot, rendues à la sortie de la liste, au remplacement et à `dispose`, rapports dédoublonnés, événements. |
-| E2E (Playwright) | `npm run test:e2e` après le build Release | Webamp s'ouvre depuis le menu Applications dans sa fenêtre, sans « Add URL » ; un `.mp3` mis dans `~` par l'explorateur et ouvert par `launch ca.kazo.webamp /home/neo/tone.mp3` joue avec ses étiquettes, et le bouton fermer de Webamp ferme la fenêtre de l'OS ; un fichier absent est signalé. |
+| C# (xUnit) | `dotnet test Kazo.Webamp.slnx -c Release` | Manifeste (dont le type `.wsz` et les capacités des skins) ; skins : `SkinArchive` (archive, `main.bmp` en casse et dossier quelconques, pas une archive, sans `main.bmp`, trop gros), `SkinLibrary` (dossier, liste triée et fichiers ignorés, copie, skin déjà dans le dossier, remplacement, refus sans copie, nom rendu sûr), `SkinController` (skin ouvert mis et retenu, skin de l'ordinateur, skin cassé refusé et skin en cours gardé, choix du menu et skin de base, skin retenu disparu, réglages cassés, notification une seule fois et de nouveau après un échec) ; `TrackLibrary` : ajout dans l'ordre avec le type, ajout à la fin, fichier illisible, rien envoyé quand rien ne se lit, morceau sorti de la liste oublié, ordre de Webamp, remplacement, changements de liste pendant l'ajout, échec de Webamp ; types audio. |
+| JavaScript | `npm test` | `webamp-host.js` avec un faux Webamp : options, adresses créées, gardées pendant l'arrivée d'un lot, rendues à la sortie de la liste, au remplacement et à `dispose`, rapports dédoublonnés, événements ; skins au démarrage (`availableSkins`, `initialSkin`), ajout trié et mis, remplacement, adresses rendues. `webamp-skins.js` avec un faux menu : entrées reconnues par leur place, « Load Skin… » pris à Webamp, annulation, choix rapportés, dépôt d'un skin. |
+| E2E (Playwright) | `npm run test:e2e` après le build Release | Webamp s'ouvre depuis le menu Applications dans sa fenêtre, sans « Add URL » ; un `.mp3` mis dans `~` par l'explorateur et ouvert par `launch ca.kazo.webamp /home/neo/tone.mp3` joue avec ses étiquettes, et le bouton fermer de Webamp ferme la fenêtre de l'OS ; un fichier absent est signalé. Skins (`skins.e2e.mjs`, skins fabriqués par `fixtures/make-skin.mjs`) : la notification au premier lancement, un `.wsz` ouvert par `launch` dans Webamp déjà ouvert est mis et listé dans le menu Skins ; « Load Skin… » met un skin et le garde, un skin cassé est refusé par une boîte de message et le skin reste, Webamp rouvert démarre avec le skin et sans nouvelle notification. |
 
 Le `.mp3` de test (`tests/e2e/fixtures/tone.mp3`, 4 s, 16 Ko) est fabriqué par
 `tests/e2e/fixtures/make-tone.sh` (ffmpeg) et validé dans le dépôt.
@@ -157,3 +210,4 @@ Le `.mp3` de test (`tests/e2e/fixtures/tone.mp3`, 4 s, 16 Ko) est fabriqué par
 | Chantier | Ce que ce document décrit |
 | --- | --- |
 | 1. `webamp/1-solution` | Solution, manifeste, fenêtre, `WebampPlayer`, `TrackLibrary`, module JavaScript. |
+| 4. `webamp/4-skins` | Skins : type `.wsz`, dossier des skins, « Load Skin… », skin retenu, explication de l'import. |

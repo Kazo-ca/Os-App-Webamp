@@ -1,3 +1,4 @@
+using Kazo.Webamp.Skins;
 using Kazo.Webamp.Tracks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
@@ -14,7 +15,7 @@ namespace Kazo.Webamp.Player;
 /// events arrive through the <see cref="JSInvokableAttribute"/> methods below, called by the module
 /// with <c>invokeMethodAsync</c>.
 /// </remarks>
-public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
+public sealed class WebampPlayer : ITrackPlayer, ISkinPlayer, IAsyncDisposable
 {
     /// <summary>Path of the host module, served by the app's Razor library.</summary>
     public const string ModulePath = "./_content/Kazo.Webamp/js/webamp-host.js";
@@ -44,14 +45,36 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     /// <summary>Raised with the keys of <see cref="TrackLibrary"/> still in Webamp's list, in its order.</summary>
     public event Action<IReadOnlyList<string>>? PlaylistChanged;
 
+    /// <summary>
+    /// Raised with the file name and bytes of a skin the user chose on the computer (Webamp's
+    /// "Skins ▸ Load Skin…", or a skin dropped on Webamp); Webamp has not put it on.
+    /// </summary>
+    public event Func<string, byte[], Task>? SkinFileChosen;
+
+    /// <summary>
+    /// Raised when the user picked a skin in Webamp's Skins menu, which Webamp puts on itself: its
+    /// <see cref="SkinFile.FileName"/>, or <see langword="null"/> for "&lt;Base Skin&gt;".
+    /// </summary>
+    public event Func<string?, Task>? SkinChosen;
+
     /// <summary>Gets whether Webamp is on screen.</summary>
     public bool IsStarted => _host is not null;
 
     /// <summary>Loads Webamp and renders it into <paramref name="element"/>.</summary>
     /// <param name="element">An empty element of the window, sized by the window.</param>
     /// <param name="cancellationToken">Cancels the start.</param>
-    public async Task StartAsync(ElementReference element, CancellationToken cancellationToken = default)
+    public Task StartAsync(ElementReference element, CancellationToken cancellationToken = default) =>
+        StartAsync(element, [], null, cancellationToken);
+
+    /// <summary>Loads Webamp with the user's skins and renders it into <paramref name="element"/>.</summary>
+    /// <param name="element">An empty element of the window, sized by the window.</param>
+    /// <param name="skins">The skins of Webamp's Skins menu, in order.</param>
+    /// <param name="initialSkin">The skin to start with, or <see langword="null"/> for Webamp's base skin.</param>
+    /// <param name="cancellationToken">Cancels the start.</param>
+    public async Task StartAsync(
+        ElementReference element, IReadOnlyList<SkinFile> skins, SkinFile? initialSkin, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(skins);
         if (_host is not null)
         {
             throw new InvalidOperationException("Webamp is already started.");
@@ -59,7 +82,12 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
 
         _self ??= DotNetObjectReference.Create(this);
         _module ??= await _javaScript.InvokeAsync<IJSObjectReference>("import", cancellationToken, ModulePath);
-        _host = await _module.InvokeAsync<IJSObjectReference>("create", cancellationToken, element, _self, new { zIndex = 0 });
+        _host = await _module.InvokeAsync<IJSObjectReference>("create", cancellationToken, element, _self, new
+        {
+            zIndex = 0,
+            skins = skins.Select(ToJs).ToArray(),
+            initialSkin = initialSkin?.FileName,
+        });
     }
 
     /// <inheritdoc />
@@ -69,6 +97,13 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     /// <inheritdoc />
     public ValueTask ReplaceAsync(IReadOnlyList<TrackData> tracks, bool play, CancellationToken cancellationToken = default) =>
         Host.InvokeVoidAsync("replaceTracks", cancellationToken, ToJs(tracks), play);
+
+    /// <inheritdoc />
+    public async ValueTask AddSkinAsync(SkinFile skin, bool apply, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(skin);
+        await Host.InvokeVoidAsync("addSkin", cancellationToken, ToJs(skin), apply);
+    }
 
     /// <summary>Called by the host module when Webamp closed.</summary>
     [JSInvokable]
@@ -87,6 +122,17 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     /// <param name="keys">The keys still listed, in order.</param>
     [JSInvokable]
     public void OnPlaylistChanged(string[] keys) => PlaylistChanged?.Invoke(keys);
+
+    /// <summary>Called by the host module with a skin the user chose on the computer.</summary>
+    /// <param name="fileName">Its file name.</param>
+    /// <param name="bytes">Its content (a <c>Uint8Array</c> on the JavaScript side).</param>
+    [JSInvokable]
+    public Task OnSkinFileChosen(string fileName, byte[] bytes) => SkinFileChosen?.Invoke(fileName, bytes) ?? Task.CompletedTask;
+
+    /// <summary>Called by the host module when a skin was picked in Webamp's Skins menu.</summary>
+    /// <param name="fileName">The skin's key (its file name), or <see langword="null"/> for the base skin.</param>
+    [JSInvokable]
+    public Task OnSkinChosen(string? fileName) => SkinChosen?.Invoke(fileName) ?? Task.CompletedTask;
 
     /// <summary>Stops the music, removes Webamp and gives its memory back (decision 8).</summary>
     public async ValueTask DisposeAsync()
@@ -118,6 +164,9 @@ public sealed class WebampPlayer : ITrackPlayer, IAsyncDisposable
     }
 
     private IJSObjectReference Host => _host ?? throw new InvalidOperationException("Webamp is not started.");
+
+    // A skin's key is its file name in the skins folder.
+    private static object ToJs(SkinFile skin) => new { key = skin.FileName, name = skin.Name, bytes = skin.Bytes };
 
     // byte[] crosses to JavaScript as a Uint8Array.
     private static object[] ToJs(IReadOnlyList<TrackData> tracks) =>

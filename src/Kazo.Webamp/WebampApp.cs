@@ -58,7 +58,21 @@ public sealed class WebampApp : AppDefinition
         // ~/.config/ca.kazo.webamp/ (the state of work item 5).
         AppCapabilities.FileSystemPrivateRead,
         AppCapabilities.FileSystemPrivateWrite,
+        // Work item 4: skins opened or loaded are copied to ~/.local/share/webamp/skins/, and the
+        // first launch explains how to import one (decisions 11 and 20).
+        AppCapabilities.FileSystemUserHomeWrite,
+        AppCapabilities.NotificationsPost,
     ];
+
+    /// <inheritdoc />
+    /// <remarks>Winamp 2 skins (work item 4): opening one puts it on and keeps it in the Skins menu.</remarks>
+    public override IReadOnlyList<FileHandler> FileHandlers =>
+    [
+        new(SkinMediaType, [".wsz"], ["open"]),
+    ];
+
+    /// <summary>Media type of a Winamp 2 skin (<c>.wsz</c>).</summary>
+    public const string SkinMediaType = "application/x-winamp-skin";
 
     /// <inheritdoc />
     public override IReadOnlyList<string> Icons => ["icons/app.svg"];

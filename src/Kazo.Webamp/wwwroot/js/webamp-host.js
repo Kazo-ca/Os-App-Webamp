@@ -7,7 +7,10 @@
 // events (close, minimize, track change, list change) to C#.
 //
 // It keeps no state outside one host object per window, so a test drives it with a fake Webamp
-// class (tests/js/webamp-host.test.mjs).
+// class (tests/js/webamp-host.test.mjs). The skins (work item 4) go through the same host, with the
+// Skins menu bridge of webamp-skins.js.
+
+import { installSkinBridge } from './webamp-skins.js';
 
 /** Address of the Webamp 2.3.1 bundle (JSZip and music-metadata included), next to this module. */
 const WEBAMP_BUNDLE = new URL('../lib/webamp/webamp.bundle.min.mjs', import.meta.url).href;
@@ -41,20 +44,50 @@ export function webampOptions(options = {}) {
  * Creates the host of one Webamp window.
  * @param {HTMLElement} element The element Webamp renders into.
  * @param {{ onClose?: () => void, onMinimize?: () => void, onTrackChanged?: (track: object | null) => void,
- *           onPlaylistChanged?: (keys: string[]) => void }} callbacks What C# hears.
- * @param {{ zIndex?: number }} [options] Options from C#.
- * @param {{ Webamp?: Function, createObjectURL?: (blob: Blob) => string, revokeObjectURL?: (url: string) => void }} [deps]
- *        Replaced by the tests.
+ *           onPlaylistChanged?: (keys: string[]) => void, onSkinFile?: (name: string, bytes: Uint8Array) => void,
+ *           onSkinChosen?: (key: string | null) => void }} callbacks What C# hears.
+ * @param {{ zIndex?: number, skins?: SkinData[], initialSkin?: string | null }} [options] Options from C#:
+ *        the skins of the user's folder, in menu order, and the key of the one to start with.
+ * @param {{ Webamp?: Function, createObjectURL?: (blob: Blob) => string, revokeObjectURL?: (url: string) => void,
+ *           pickSkinFile?: () => Promise<File | null> }} [deps] Replaced by the tests.
  * @returns {Promise<WebampHost>} The host, once Webamp is on screen.
  */
 export async function createHost(element, callbacks, options = {}, deps = {}) {
     const Webamp = deps.Webamp ?? await loadWebamp();
-    const host = new WebampHost(new Webamp(webampOptions(options)), callbacks, {
+    const urls = {
         createObjectURL: deps.createObjectURL ?? (blob => URL.createObjectURL(blob)),
         revokeObjectURL: deps.revokeObjectURL ?? (url => URL.revokeObjectURL(url)),
+    };
+
+    // The user's skins are in Webamp's menu from the start, and Webamp starts with the skin in use
+    // (no flash of the base skin).
+    const skins = (options.skins ?? []).map(skin => toSkinEntry(skin, urls));
+    const initial = skins.find(skin => skin.key === options.initialSkin);
+    const webamp = new Webamp({
+        ...webampOptions(options),
+        availableSkins: skins.map(skinMenuItem),
+        ...(initial ? { initialSkin: { url: initial.url } } : {}),
     });
+    const host = new WebampHost(webamp, callbacks, urls, skins);
     await host.webamp.renderInto(element);
+    if (typeof element.addEventListener === 'function') {
+        host.watchSkinMenu(element, deps.pickSkinFile);
+    }
     return host;
+}
+
+/**
+ * A skin sent by C#.
+ * @typedef {{ key: string, name: string, bytes: Uint8Array }} SkinData
+ */
+
+function toSkinEntry(skin, urls) {
+    const url = urls.createObjectURL(new Blob([skin.bytes], { type: 'application/x-winamp-skin' }));
+    return { key: skin.key, name: skin.name, url };
+}
+
+function skinMenuItem(skin) {
+    return { url: skin.url, name: skin.name };
 }
 
 /**
@@ -74,6 +107,8 @@ export function create(element, dotNet, options = {}) {
         onMinimize: () => send('OnWebampMinimized'),
         onTrackChanged: track => send('OnTrackChanged', track),
         onPlaylistChanged: keys => send('OnPlaylistChanged', keys),
+        onSkinFile: (name, bytes) => send('OnSkinFileChosen', name, bytes),
+        onSkinChosen: key => send('OnSkinChosen', key),
     }, options);
 }
 
@@ -83,8 +118,9 @@ export class WebampHost {
      * @param {object} webamp The Webamp instance.
      * @param {object} callbacks What C# hears.
      * @param {{ createObjectURL: (blob: Blob) => string, revokeObjectURL: (url: string) => void }} urls Blob addresses.
+     * @param {{ key: string, name: string, url: string }[]} [skins] The skins of Webamp's menu, in its order.
      */
-    constructor(webamp, callbacks, urls) {
+    constructor(webamp, callbacks, urls, skins = []) {
         this.webamp = webamp;
         this._callbacks = callbacks;
         this._urls = urls;
@@ -94,6 +130,9 @@ export class WebampHost {
         this._listed = new Set();
         this._lastSignature = '';
         this._disposed = false;
+        /** The skins of Webamp's Skins menu, in its order, each with its Blob address. */
+        this._skins = [...skins];
+        this._unwatchSkinMenu = null;
         this._unsubscribe = [
             webamp.onClose(() => this._callbacks.onClose?.()),
             webamp.onMinimize(() => this._callbacks.onMinimize?.()),
@@ -142,9 +181,64 @@ export class WebampHost {
             .filter(key => key !== undefined);
     }
 
-    /** @returns {number} How many Blob addresses this host still holds. */
+    /** @returns {number} How many Blob addresses of tracks this host still holds. */
     get heldAddresses() {
         return this._keysByUrl.size;
+    }
+
+    /** @returns {string[]} The keys of the skins in Webamp's Skins menu, in its order. */
+    skinKeys() {
+        return this._skins.map(skin => skin.key);
+    }
+
+    /**
+     * Adds a skin to Webamp's Skins menu, or replaces the one with the same key, and puts it on.
+     * @param {SkinData} skin The skin, checked by C#.
+     * @param {boolean} apply Whether Webamp changes to it now.
+     * @returns {Promise<void>} Once Webamp has drawn it (with apply).
+     */
+    async addSkin(skin, apply) {
+        if (this._disposed) {
+            return;
+        }
+        const entry = toSkinEntry(skin, this._urls);
+        const index = this._skins.findIndex(listed => listed.key === skin.key);
+        if (index >= 0) {
+            this._urls.revokeObjectURL(this._skins[index].url);
+            this._skins[index] = entry;
+        } else {
+            this._skins.push(entry);
+            this._skins.sort(compareSkins);
+        }
+        // Webamp 2.3.1 has no method to change the list after construction: this is the action its
+        // constructor dispatches with the availableSkins option.
+        this.webamp.store.dispatch({ type: 'SET_AVAILABLE_SKINS', skins: this._skins.map(skinMenuItem) });
+        if (apply) {
+            this.webamp.setSkinFromUrl(entry.url);
+            await this.webamp.skinIsLoaded();
+        }
+    }
+
+    /**
+     * Catches "Skins ▸ Load Skin…", a skin chosen in the menu and a skin dropped on Webamp.
+     * @param {HTMLElement} element The element Webamp renders into.
+     * @param {() => Promise<File | null>} [pickFile] Replaced by the tests.
+     */
+    watchSkinMenu(element, pickFile) {
+        this._unwatchSkinMenu?.();
+        this._unwatchSkinMenu = installSkinBridge(element, {
+            pickFile,
+            onSkinFile: file => this._skinFileChosen(file),
+            onMenuChoice: action => this._callbacks.onSkinChosen?.(
+                action.kind === 'skin' ? this._skins[action.index]?.key ?? null : null),
+        });
+    }
+
+    async _skinFileChosen(file) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (!this._disposed) {
+            this._callbacks.onSkinFile?.(file.name, bytes);
+        }
     }
 
     /** Stops the music and gives every address back (decision 8: the sound stops on close). */
@@ -156,6 +250,7 @@ export class WebampHost {
         for (const unsubscribe of this._unsubscribe) {
             unsubscribe?.();
         }
+        this._unwatchSkinMenu?.();
         try {
             this.webamp.stop();
         } finally {
@@ -165,6 +260,10 @@ export class WebampHost {
             }
             this._keysByUrl.clear();
             this._listed.clear();
+            for (const skin of this._skins) {
+                this._urls.revokeObjectURL(skin.url);
+            }
+            this._skins = [];
         }
     }
 
@@ -201,6 +300,12 @@ export class WebampHost {
             this._callbacks.onPlaylistChanged?.(keys);
         }
     }
+}
+
+// The order of the Skins menu, the same as SkinLibrary's in C#: by name, case ignored.
+function compareSkins(left, right) {
+    const byName = left.name.localeCompare(right.name, undefined, { sensitivity: 'accent' });
+    return byName !== 0 ? byName : (left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
 }
 
 /**
