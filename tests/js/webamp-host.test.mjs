@@ -2,9 +2,9 @@
 // fake Webamp: the options, the Blob addresses (created, kept while listed, given back), the events.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FilePromptInterceptor, classifyFilePrompt, createHost, describeTrack, ownsTarget, trackTitle, webampOptions } from '../../src/Kazo.Webamp/wwwroot/js/webamp-host.js';
+import { FilePromptInterceptor, classifyFilePrompt, constructCapturingHotkeys, createHost, lazyButterchurn, ownsTarget, toWindowLayout, trackTitle, webampOptions } from '../../src/Kazo.Webamp/wwwroot/js/webamp-host.js';
 
-/** Just enough of Webamp 2.3.1's public API, with a store that notifies on every change. */
+/** Just enough of Webamp 2.3.1's public API and store, notifying on every change. */
 class FakeWebamp {
     static last;
 
@@ -16,13 +16,66 @@ class FakeWebamp {
         this.playing = false;
         this.disposed = false;
         this.renderedInto = null;
-        this.listeners = { close: [], minimize: [], track: [], store: [] };
         this.dispatched = [];
         this.skinUrl = null;
+        this.duration = NaN;
+        this.elapsed = 0;
+        this.listeners = { close: [], minimize: [], store: [] };
+        this.media = { duration: () => this.duration, timeElapsed: () => this.elapsed };
+        this.s = {
+            media: { status: 'STOPPED', volume: 78, balance: 0, shuffle: false, repeat: false, timeElapsed: 0 },
+            equalizer: { on: true, auto: false, sliders: { preamp: 50, 60: 50, 170: 50, 310: 50, 600: 50, 1000: 50, 3000: 50, 6000: 50, 12000: 50, 14000: 50, 16000: 50 } },
+            display: { doubled: options.enableDoubleSizeMode === true },
+            windows: {
+                positionsAreRelative: true,
+                genWindows: {
+                    main: { position: { x: 0, y: 0 }, open: true, shade: false, size: [0, 0] },
+                    equalizer: { position: { x: 0, y: 116 }, open: true, shade: false, size: [0, 0] },
+                    playlist: { position: { x: 0, y: 232 }, open: true, shade: false, size: [0, 0] },
+                    milkdrop: { position: { x: 0, y: 0 }, open: options.__butterchurnOptions?.butterchurnOpen === true, shade: false, size: [0, 0] },
+                },
+            },
+        };
         this.store = {
             subscribe: listener => this._on('store', listener),
-            dispatch: action => this.dispatched.push(action),
+            getState: () => ({
+                ...this.s,
+                playlist: { currentTrack: this.current },
+                tracks: Object.fromEntries(this.tracks.map((track, id) => [id, { ...track, id }])),
+            }),
+            dispatch: action => this._dispatch(action),
         };
+        // Like Webamp: hotkeys bound on the page, Butterchurn asked for at construction.
+        if (options.enableHotkeys) {
+            globalThis.document?.addEventListener('keydown', event => this.dispatched.push({ type: 'HOTKEY', key: event.key }));
+        }
+        const butterchurn = options.__butterchurnOptions;
+        if (butterchurn) {
+            this.butterchurn = butterchurn.importButterchurn();
+            this.presets = butterchurn.getPresets();
+        }
+    }
+
+    _dispatch(action) {
+        this.dispatched.push(action);
+        const s = this.s;
+        switch (action.type) {
+            case 'SET_BALANCE': s.media.balance = action.balance; break;
+            case 'SET_BAND_VALUE': s.equalizer.sliders[action.band] = action.value; break;
+            case 'SET_EQ_ON': s.equalizer.on = true; break;
+            case 'SET_EQ_OFF': s.equalizer.on = false; break;
+            case 'SET_EQ_AUTO': s.equalizer.auto = action.value; break;
+            case 'PAUSE': s.media.status = 'PAUSED'; this.playing = false; break;
+            case 'UPDATE_WINDOW_POSITIONS':
+                for (const [id, position] of Object.entries(action.positions)) {
+                    s.windows.genWindows[id].position = position;
+                }
+                if (action.absolute) {
+                    s.windows.positionsAreRelative = false;
+                }
+                break;
+        }
+        this._emit('store');
     }
 
     _on(name, listener) {
@@ -41,7 +94,6 @@ class FakeWebamp {
     async renderInto(element) { this.renderedInto = element; }
     onClose(listener) { return this._on('close', listener); }
     onMinimize(listener) { return this._on('minimize', listener); }
-    onTrackDidChange(listener) { return this._on('track', listener); }
     getPlaylistTracks() {
         return this.tracks.map((track, id) => ({
             id, url: track.url, defaultName: track.defaultName, duration: track.duration ?? null,
@@ -52,7 +104,7 @@ class FakeWebamp {
     // Like Webamp, a batch arrives one track at a time, the store notifying after each one.
     appendTracks(tracks) {
         for (const track of tracks) {
-            this.tracks.push(track);
+            this.tracks.push({ ...track });
             this._emit('store');
         }
     }
@@ -65,9 +117,15 @@ class FakeWebamp {
         this.playing = true;
     }
 
-    setCurrentTrack(index) { this.current = index; }
-    play() { this.playing = true; }
-    stop() { this.playing = false; }
+    setCurrentTrack(index) { this.current = index; this._emit('store'); }
+    play() { this.playing = true; this.s.media.status = 'PLAYING'; this._emit('store'); }
+    stop() { this.playing = false; this.s.media.status = 'STOPPED'; this._emit('store'); }
+    setVolume(volume) { this.s.media.volume = volume; this._emit('store'); }
+    isShuffleEnabled() { return this.s.media.shuffle; }
+    toggleShuffle() { this.s.media.shuffle = !this.s.media.shuffle; this._emit('store'); }
+    isRepeatEnabled() { return this.s.media.repeat; }
+    toggleRepeat() { this.s.media.repeat = !this.s.media.repeat; this._emit('store'); }
+    seekToTime(seconds) { this.elapsed = seconds; this._emit('store'); }
     dispose() { this.disposed = true; }
     setSkinFromUrl(url) { this.skinUrl = url; }
     async skinIsLoaded() { this.skinLoadedAwaited = true; }
@@ -76,39 +134,66 @@ class FakeWebamp {
         this.tracks.splice(index, 1);
         this._emit('store');
     }
+
+    setTags(index, tags) {
+        Object.assign(this.tracks[index], tags);
+        this._emit('store');
+    }
+
+    openWindow(id) {
+        this.s.windows.genWindows[id].open = true;
+        this._emit('store');
+    }
 }
 
-const start = async (options = {}) => {
-    const events = { closed: 0, minimized: 0, tracks: [], lists: [], loads: 0, saves: [], skinFiles: [], skinChoices: [] };
+/** A page with only what the host uses: keydown listeners. */
+class FakeDocument {
+    constructor() { this.listeners = []; }
+    addEventListener(type, listener) { if (type === 'keydown') this.listeners.push(listener); }
+    removeEventListener(type, listener) { this.listeners = this.listeners.filter(l => l !== listener); }
+    press(key) { for (const listener of [...this.listeners]) listener({ key }); }
+}
+
+const start = async (options = {}, extra = {}) => {
+    const events = { closed: 0, minimized: 0, tracks: [], lists: [], states: 0, loads: 0, saves: [], skinFiles: [], skinChoices: [] };
     const urls = { created: [], revoked: [] };
+    const loads = { butterchurn: 0, presets: 0 };
     let next = 0;
     const host = await createHost({ id: 'surface' }, {
         onClose: () => events.closed++,
         onMinimize: () => events.minimized++,
         onTrackChanged: track => events.tracks.push(track),
         onPlaylistChanged: keys => events.lists.push(keys),
+        onStateChanged: () => events.states++,
         onLoadList: () => events.loads++,
         onSaveList: (entries, unsaved) => events.saves.push({ entries, unsaved }),
         onSkinFile: (name, bytes) => events.skinFiles.push({ name, bytes }),
         onSkinChosen: key => events.skinChoices.push(key),
     }, options, {
         Webamp: FakeWebamp,
+        document: extra.document ?? null,
         createObjectURL: blob => {
             const url = `blob:test/${++next}`;
             urls.created.push({ url, blob });
             return url;
         },
         revokeObjectURL: url => urls.revoked.push(url),
+        loaders: {
+            importButterchurn: async () => { loads.butterchurn++; return { default: 'butterchurn' }; },
+            importPresets: async () => { loads.presets++; return [{ name: 'p', butterchurnPresetObject: {} }]; },
+        },
     });
-    return { host, webamp: FakeWebamp.last, events, urls };
+    return { host, webamp: FakeWebamp.last, events, urls, loads };
 };
 
 const track = (key, bytes = [1, 2, 3]) => ({ key, name: `${key}.mp3`, mimeType: 'audio/mpeg', bytes: new Uint8Array(bytes) });
 
-test('Webamp is created without its page-wide hotkeys and without Add URL, then rendered into the element', async () => {
+test('Webamp is created with the Media Session, without Add URL, then rendered into the element', async () => {
     const { webamp } = await start();
-    assert.equal(webamp.options.enableHotkeys, false);
+    assert.equal(webamp.options.enableMediaSession, true);
     assert.equal(webamp.options.handleAddUrlEvent(), null);
+    assert.equal(webamp.options.windowLayout, undefined);
+    assert.equal(webamp.options.enableDoubleSizeMode, false);
     assert.deepEqual(webamp.renderedInto, { id: 'surface' });
     assert.equal(webampOptions({ zIndex: 5 }).zIndex, 5);
     assert.equal(webampOptions().zIndex, 0);
@@ -173,15 +258,31 @@ test('tracks Webamp got elsewhere (dropped from the computer) have no key', asyn
     assert.deepEqual(host.playlistKeys(), ['t1']);
 });
 
-test('close, minimize and track changes reach C#', async () => {
+test('close and minimize reach C#', async () => {
     const { webamp, events } = await start();
     webamp._emit('close');
     webamp._emit('minimize');
-    webamp._emit('track', { url: 'blob:test/1', metaData: { artist: 'Artist', title: 'Title', album: null } });
-    webamp._emit('track', null);
     assert.equal(events.closed, 1);
     assert.equal(events.minimized, 1);
-    assert.deepEqual(events.tracks, [{ artist: 'Artist', title: 'Title' }, null]);
+});
+
+test('the current track is reported with its tags, playing or not, and none when the list empties', async () => {
+    const { host, webamp, events } = await start();
+    assert.deepEqual(events.tracks, []);
+
+    host.addTracks([track('t1')], true);
+    assert.deepEqual(events.tracks.at(-1), { artist: null, title: null, name: 't1.mp3' });
+
+    webamp.setTags(0, { artist: 'Artist', title: 'Title' });
+    webamp.stop();
+    assert.deepEqual(events.tracks.at(-1), { artist: 'Artist', title: 'Title', name: 't1.mp3' });
+    const reports = events.tracks.length;
+    webamp._emit('store');
+    assert.equal(events.tracks.length, reports);
+
+    webamp.current = null;
+    webamp._emit('store');
+    assert.equal(events.tracks.at(-1), null);
 });
 
 test('dispose stops the music, removes Webamp, gives every address back and ignores later calls', async () => {
@@ -202,9 +303,182 @@ test('dispose stops the music, removes Webamp, gives every address back and igno
     assert.equal(events.closed, 0);
 });
 
-test('describeTrack keeps the artist and the title only', () => {
-    assert.equal(describeTrack(null), null);
-    assert.deepEqual(describeTrack({ metaData: {} }), { artist: null, title: null });
+const saved = {
+    position: 0, volume: 33, balance: -40, shuffle: true, repeat: true,
+    equalizer: { on: false, auto: true, preamp: 70, bands: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+    doubleSize: true,
+    windows: {
+        absolute: true,
+        main: { x: 5, y: 6, open: true, shade: true, extraWidth: 0, extraHeight: 0 },
+        equalizer: { x: 5, y: 122, open: false, shade: false, extraWidth: 0, extraHeight: 0 },
+        playlist: { x: 5, y: 238, open: true, shade: false, extraWidth: 2, extraHeight: 3 },
+        milkdrop: { x: 280, y: 6, open: false, shade: false, extraWidth: 7, extraHeight: 12 },
+    },
+};
+
+test('the saved layout becomes Webamp options: places, closed windows, shade, sizes, double size', async () => {
+    const { webamp } = await start({ settings: saved });
+    assert.equal(webamp.options.enableDoubleSizeMode, true);
+    assert.deepEqual(webamp.options.windowLayout.main, { position: { left: 5, top: 6 }, closed: false, shadeMode: true });
+    assert.deepEqual(webamp.options.windowLayout.equalizer, { position: { left: 5, top: 122 }, closed: true });
+    assert.deepEqual(webamp.options.windowLayout.playlist.size, { extraWidth: 2, extraHeight: 3 });
+    assert.equal(webamp.options.windowLayout.milkdrop.shadeMode, undefined);
+    assert.equal(toWindowLayout(null), undefined);
+});
+
+test('saved settings are put back before the first frame and read back the same', async () => {
+    const { host, webamp } = await start({ settings: saved });
+    const read = host.readState();
+
+    assert.equal(webamp.renderedInto.id, 'surface');
+    assert.equal(read.currentKey, null);
+    assert.deepEqual(read.settings.equalizer, saved.equalizer);
+    assert.equal(read.settings.volume, 33);
+    assert.equal(read.settings.balance, -40);
+    assert.equal(read.settings.shuffle, true);
+    assert.equal(read.settings.repeat, true);
+    assert.equal(read.settings.windows.absolute, true);
+    assert.deepEqual(read.settings.windows.main, { x: 5, y: 6, open: true, shade: false, extraWidth: 0, extraHeight: 0 });
+});
+
+test('without moved windows, Webamp keeps centering them', async () => {
+    const { webamp } = await start({ settings: { ...saved, windows: { ...saved.windows, absolute: false } } });
+    assert.equal(webamp.dispatched.some(action => action.type === 'UPDATE_WINDOW_POSITIONS'), false);
+});
+
+test('the state names the current track by its key, and its position only while playing or paused', async () => {
+    const { host, webamp } = await start();
+    host.addTracks([track('t1'), track('t2')], true);
+    webamp.setCurrentTrack(1);
+    webamp.elapsed = 12.5;
+    assert.equal(host.readState().currentKey, 't2');
+    assert.equal(host.readState().settings.position, 12.5);
+
+    webamp.stop();
+    assert.equal(host.readState().settings.position, 0);
+});
+
+test('state changes reach C# once per change, the clock only every few seconds', async () => {
+    const { host, webamp, events } = await start();
+    const before = events.states;
+    webamp.setVolume(10);
+    assert.equal(events.states, before + 1);
+    webamp._emit('store');
+    assert.equal(events.states, before + 1);
+
+    host.addTracks([track('t1')], true);
+    const playing = events.states;
+    webamp.elapsed = 1;
+    webamp._emit('store');
+    webamp.elapsed = 4.9;
+    webamp._emit('store');
+    assert.equal(events.states, playing);
+    webamp.elapsed = 5.1;
+    webamp._emit('store');
+    assert.equal(events.states, playing + 1);
+});
+
+test('resume makes a track current, then waits for it to load, seeks and stays paused', async () => {
+    const { host, webamp } = await start();
+    host.addTracks([track('t1'), track('t2')], false);
+
+    const resumed = host.resume(1, 30);
+    assert.equal(webamp.current, 1);
+    assert.equal(webamp.elapsed, 0);
+    webamp.duration = 200;
+    webamp._emit('store');
+
+    assert.equal(await resumed, true);
+    assert.equal(webamp.elapsed, 30);
+    assert.equal(webamp.s.media.status, 'PAUSED');
+    assert.equal(webamp.playing, false);
+});
+
+test('resume without a position, or outside the list, does not seek', async () => {
+    const { host, webamp } = await start();
+    host.addTracks([track('t1')], false);
+    assert.equal(await host.resume(0, 0), false);
+    assert.equal(webamp.current, 0);
+    assert.equal(await host.resume(4, 10), false);
+    assert.equal(webamp.dispatched.some(action => action.type === 'PAUSE'), false);
+});
+
+test('Webamp\'s hotkeys act only while the window has the focus, never on the page itself', async () => {
+    const document = new FakeDocument();
+    const previous = globalThis.document;
+    globalThis.document = document;
+    try {
+        const { host, webamp } = await start({ focused: false }, { document });
+        // Webamp's own listener was captured: the page only has the host's.
+        assert.equal(document.listeners.length, 1);
+
+        document.press('x');
+        assert.equal(webamp.dispatched.filter(action => action.type === 'HOTKEY').length, 0);
+
+        host.setFocused(true);
+        document.press('x');
+        assert.deepEqual(webamp.dispatched.filter(action => action.type === 'HOTKEY'), [{ type: 'HOTKEY', key: 'x' }]);
+
+        host.setFocused(false);
+        document.press('c');
+        assert.equal(webamp.dispatched.filter(action => action.type === 'HOTKEY').length, 1);
+
+        host.dispose();
+        assert.equal(document.listeners.length, 0);
+    } finally {
+        globalThis.document = previous;
+    }
+});
+
+test('other listeners added while Webamp is created still reach the page', () => {
+    const document = new FakeDocument();
+    let other = 0;
+    document.addEventListener = function (type, listener) { if (type === 'click') other++; else FakeDocument.prototype.addEventListener.call(this, type, listener); };
+    const original = document.addEventListener;
+    class Probe {
+        constructor() {
+            document.addEventListener('click', () => {});
+            document.addEventListener('keydown', () => {});
+        }
+    }
+    const { hotkeys } = constructCapturingHotkeys(Probe, {}, document);
+    assert.equal(other, 1);
+    assert.equal(hotkeys.length, 1);
+    assert.equal(document.listeners.length, 0);
+    assert.equal(document.addEventListener, original);
+});
+
+test('Milkdrop: Butterchurn and its presets load only when its window first opens', async () => {
+    const { host, webamp, loads } = await start();
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(loads.butterchurn, 0);
+    assert.equal(loads.presets, 0);
+    assert.equal(host.milkdropLoaded, false);
+    assert.equal(webamp.options.__butterchurnOptions.butterchurnOpen, false);
+
+    webamp.openWindow('milkdrop');
+    assert.deepEqual(await webamp.butterchurn, { default: 'butterchurn' });
+    assert.equal((await webamp.presets)[0].name, 'p');
+    assert.equal(loads.butterchurn, 1);
+    assert.equal(loads.presets, 1);
+    assert.equal(host.milkdropLoaded, true);
+});
+
+test('Milkdrop open in the saved layout loads at start', async () => {
+    const { webamp, loads } = await start({ settings: { ...saved, windows: { ...saved.windows, milkdrop: { ...saved.windows.milkdrop, open: true } } } });
+    assert.equal(webamp.options.__butterchurnOptions.butterchurnOpen, true);
+    await webamp.butterchurn;
+    assert.equal(loads.butterchurn, 1);
+});
+
+test('lazyButterchurn holds its promises until opened', async () => {
+    let loaded = false;
+    const gate = lazyButterchurn(false, { importButterchurn: async () => { loaded = true; return 1; } });
+    const pending = gate.options.importButterchurn();
+    await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(loaded, false);
+    gate.open();
+    assert.equal(await pending, 1);
 });
 
 test('Load list asks C# and gives Webamp nothing, so Webamp keeps its list until C# replaces it', async () => {

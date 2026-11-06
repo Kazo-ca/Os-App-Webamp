@@ -55,8 +55,8 @@ Benoit's answers on 2026-11-06 ("ok" = the recommendation).
 | Menu entries | "Play in Webamp" and "Add to the Webamp list" on audio files, lists and folders. |
 | Webamp | Bundle `webamp.lazy-bundle.min.mjs` 2.3.1 and Butterchurn in `wwwroot/lib/`; a `webamp-host.js` module that creates the instance, hands tracks over as `Blob`s and raises events to C#. C# keeps the logic: lists, paths, state, intents. |
 | Window | Content sized to Webamp's windows (player, equalizer, list stacked: 275×348 at normal size), resizable. `onClose` closes the OS window, `onMinimize` minimizes it. |
-| Shortcuts | `enableHotkeys` off; Webamp's shortcuts only act while the window has the focus. |
-| State | `~/.config/ca.kazo.webamp/state.json`: list (paths), track, position, volume, balance, equalizer, skin, window layout, double size. A missing file stays in the list and is skipped when played, as in Winamp. |
+| Shortcuts | The page listener of `enableHotkeys` is captured when Webamp is created and called only while the window has the focus (never on the whole page): Webamp's shortcuts only act while the window has the focus. |
+| State | `~/.config/ca.kazo.webamp/state.json`: list (paths), track, position, volume, balance, equalizer, window layout, double size; the skin in use is kept by work item 4 in `skins.json` (one place for it). A missing file stays in the list and is skipped when played, as in Winamp. |
 
 ## Work, in order
 
@@ -103,6 +103,6 @@ Series `webamp/base` (created from `main`), one PR per work item to
 | 2. Open from the OS: audio types, one window, add and play, menus, dialogs, 1 GB | `webamp/2-open-files` | 1 | Done ([architecture](architecture.md#opening-from-the-os)) |
 | 3. `.m3u`, `.m3u8`, `.pls` lists | `webamp/3-playlists` | 1 | Done ([architecture](architecture.md#playlists)) |
 | 4. `.wsz` skins and the import explanation | `webamp/4-skins` | 1 | Done ([architecture](architecture.md#skins)) |
-| 5. Remembered state, title, Media Session, shortcuts, Milkdrop | `webamp/5-state-and-media` | 1 | To do |
+| 5. Remembered state, title, Media Session, shortcuts, Milkdrop | `webamp/5-state-and-media` | 1 | Done ([architecture](architecture.md#state-title-shortcuts-milkdrop)) |
 | 6. Store listing, end-to-end tests, `v1.0.0` | `webamp/6-store` | 2 to 5 | To do |
 | 7. Submodule on the OS version with ADR 0231, test on `/mnt`; Webamp's minimize button once [Os#384](https://github.com/Kazo-ca/Os/issues/384) is released | `webamp/7-network-drive` | Os#381 released, 1 | To do |

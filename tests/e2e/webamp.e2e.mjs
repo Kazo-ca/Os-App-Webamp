@@ -18,8 +18,9 @@ after(async () => {
     host?.stop();
 });
 
-// Webamp's taskbar button: the OS window is there while it shows.
-const taskbarButton = page => page.locator('button', { hasText: /^\s*Webamp\s*$/ });
+// Webamp's taskbar button: the OS window is there while it shows. Its text is the window's title,
+// "Webamp" or "Artist - Title - Webamp" (work item 5).
+const taskbarButton = page => page.locator('button', { hasText: /^\s*(.+ - )?Webamp\s*$/ });
 
 test('Webamp opens from the Applications menu inside its OS window, without Add URL', { timeout: 300_000 }, async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

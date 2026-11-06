@@ -3,11 +3,13 @@ using Kazo.Os.AppSdk;
 using Kazo.Os.AppSdk.Blazor;
 using Kazo.Os.AppSdk.Globalization;
 using Kazo.Os.AppSdk.IO;
+using Kazo.Os.AppSdk.Diagnostics;
 using Kazo.Os.Simulation.Abstractions.Processes;
 using Kazo.Webamp.Opening;
 using Kazo.Webamp.Player;
 using Kazo.Webamp.Playlists;
 using Kazo.Webamp.Skins;
+using Kazo.Webamp.State;
 using Kazo.Webamp.Tracks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Localization;
@@ -30,8 +32,15 @@ namespace Kazo.Webamp;
 /// </para>
 /// <para>A <c>.wsz</c> given to Webamp is a skin: it is put on (<c>WebampWindow.Skins.cs</c>, work item 4).</para>
 /// <para>The <see cref="Tracks"/> library is what work item 5 builds on (state).</para>
+/// <para>
+/// At start it reads <c>~/.config/ca.kazo.webamp/state.json</c> and puts Webamp back as it was
+/// (decision 13), before the files it was opened on; the skin in use stays in <c>skins.json</c>
+/// (work item 4). Every change is written there, grouped, and a last time when the window closes.
+/// The window's title follows the current track (decision 8), and Webamp's hotkeys act only while
+/// the window has the focus (decision 17).
+/// </para>
 /// </remarks>
-public sealed partial class WebampWindow : IAsyncDisposable
+public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
 {
     // How long the OS waits for the app's own process to stop after Webamp's close button.
     private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(2);
@@ -41,7 +50,10 @@ public sealed partial class WebampWindow : IAsyncDisposable
     private string? _status;
     private bool _failed;
     private bool _closing;
+    private bool _saveFailureShown;
     private IStringLocalizer<Strings>? _localizer;
+    private WebampStateFile? _stateFile;
+    private StateSaveScheduler? _saver;
     private readonly PlaylistFiles _playlists = new();
     private readonly AudioFileCollector _collector = new();
     private readonly LoadedMemoryWarning _memoryWarning = new();
@@ -55,6 +67,12 @@ public sealed partial class WebampWindow : IAsyncDisposable
     /// <summary>Gets the files in Webamp's list; <see langword="null"/> until Webamp is on screen.</summary>
     internal TrackLibrary? Tracks { get; private set; }
 
+    /// <summary>
+    /// Gets what is saved between runs in <c>state.json</c> (decision 13; the skin is in
+    /// <c>skins.json</c>). <see langword="null"/> until Webamp is on screen.
+    /// </summary>
+    internal WebampStateKeeper? State { get; private set; }
+
     private IStringLocalizer<Strings> L => _localizer ??= AppContext.GetLocalizer<Strings>();
 
     private OpenQueue Opens => _opens ??= CreateQueue();
@@ -62,16 +80,53 @@ public sealed partial class WebampWindow : IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        // Closed without the close guard (the process was killed): one last try to save.
+        await SaveLastTimeAsync();
         _opens?.Stop();
         if (_player is not null)
         {
             _player.PlaylistChanged -= OnPlaylistChanged;
+            _player.StateChanged -= OnStateChanged;
+            _player.TrackChanged -= OnTrackChangedAsync;
             _player.OpenRequested -= OnOpenRequestedAsync;
             _player.LoadListRequested -= OnLoadListRequestedAsync;
             _player.SaveListRequested -= OnSaveListRequestedAsync;
             DetachSkins(_player);
             await _player.DisposeAsync();
             _player = null;
+        }
+    }
+
+    /// <summary>
+    /// The window closes (its close button, Alt+F4): the state is written a last time, then the
+    /// window may close. Nothing is ever lost, so the user is never asked.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the close.</param>
+    /// <returns>Always <see langword="true"/>.</returns>
+    public async ValueTask<bool> ConfirmCloseAsync(CancellationToken cancellationToken = default)
+    {
+        await SaveLastTimeAsync();
+        return true;
+    }
+
+    /// <inheritdoc />
+    protected override Task OnAppStopRequestedAsync(KazoStopRequestedEventArgs e) => SaveLastTimeAsync();
+
+    /// <inheritdoc />
+    protected override async Task OnWindowActivatedAsync()
+    {
+        if (_player is not null)
+        {
+            await _player.SetFocusedAsync(true);
+        }
+    }
+
+    /// <inheritdoc />
+    protected override async Task OnWindowDeactivatedAsync()
+    {
+        if (_player is not null)
+        {
+            await _player.SetFocusedAsync(false);
         }
     }
 
@@ -111,12 +166,16 @@ public sealed partial class WebampWindow : IAsyncDisposable
             return;
         }
 
+        _stateFile = new WebampStateFile(AppContext.HomeDirectory);
+        WebampState saved = await _stateFile.LoadAsync(AppContext.CancellationToken);
+
         // The user's skins first: Webamp starts with them in its menu and the skin in use on.
         SkinController skins = await StartSkinsAsync();
         WebampPlayer player = new(JavaScript);
+        player.TrackChanged += OnTrackChangedAsync;
         try
         {
-            await player.StartAsync(_surface, skins.Library.Skins, skins.Current, AppContext.CancellationToken);
+            await player.StartAsync(_surface, skins.Library.Skins, skins.Current, saved.Player, IsWindowActive, AppContext.CancellationToken);
         }
         catch (Exception exception) when (exception is JSException or InvalidOperationException)
         {
@@ -133,7 +192,25 @@ public sealed partial class WebampWindow : IAsyncDisposable
         _player.OpenRequested += OnOpenRequestedAsync;
         Tracks = new TrackLibrary(player);
         AttachSkins(player, skins);
+        State = new WebampStateKeeper(player, Tracks);
         _status = null;
+
+        // The saved list, current track and position; a file that has disappeared is skipped
+        // and stays in the saved list. Changes are saved only from here on.
+        try
+        {
+            await State.RestoreAsync(saved, AppContext.CancellationToken);
+        }
+        catch (JSException exception)
+        {
+            Fail(L["StartFailed", exception.Message]);
+        }
+
+        _saver = new StateSaveScheduler(SaveStateAsync, onError: OnSaveFailed);
+        _player.StateChanged += OnStateChanged;
+        Tracks.Changed += OnStateChanged;
+
+        // Files the window was opened on (or that arrived since) come after the saved list.
         Opens.Start();
         StateHasChanged();
         await ShowSkinTipOnceAsync();
@@ -156,6 +233,7 @@ public sealed partial class WebampWindow : IAsyncDisposable
         }
 
         _closing = true;
+        await SaveLastTimeAsync();
         try
         {
             await AppContext.Processes.StopAsync(AppContext.ProcessId, CloseTimeout, ProcessExitReason.CloseRequested);
@@ -167,6 +245,51 @@ public sealed partial class WebampWindow : IAsyncDisposable
     }
 
     private void OnPlaylistChanged(IReadOnlyList<string> keys) => Tracks?.OnPlaylistChanged(keys);
+
+    private void OnStateChanged() => _saver?.Schedule();
+
+    // "Artist - Title - Webamp", or "Webamp" without a current track (decision 8).
+    private async Task OnTrackChangedAsync(WebampTrackInfo? track)
+    {
+        try
+        {
+            await InvokeAsync(() => SetWindowTitleAsync(TrackTitle.Format(track, AppContext.Manifest.Name)).AsTask());
+        }
+        catch (InvalidOperationException)
+        {
+            // The window is closing: no title to show anymore.
+        }
+    }
+
+    private async Task SaveStateAsync(CancellationToken cancellationToken)
+    {
+        if (State is null || _stateFile is null || _player is null)
+        {
+            return;
+        }
+
+        // Saves start from Webamp's events (a JavaScript callback) and a timer, outside the scope the
+        // OS opens for app code: enter it, so the file system knows which app and user write.
+        using IDisposable scope = KazoExecutionContext.Enter(AppContext);
+        WebampState state = await State.CaptureAsync(cancellationToken);
+        await _stateFile.SaveAsync(state, cancellationToken);
+    }
+
+    // Once: on close, on a stop request, at dispose, whichever comes first.
+    private Task SaveLastTimeAsync() => _saver?.StopAsync() ?? Task.CompletedTask;
+
+    private void OnSaveFailed(Exception exception)
+    {
+        // The page is going away, or Webamp with it: nothing to save from anymore.
+        if (exception is JSDisconnectedException or ObjectDisposedException || _closing || _saveFailureShown)
+        {
+            return;
+        }
+
+        // Shown once: a full disk would otherwise repeat it at every change.
+        _saveFailureShown = true;
+        _ = InvokeAsync(() => Fail(L["StateSaveFailed", exception.Message]));
+    }
 
     /// <summary>
     /// Adds files at the end of Webamp's list (decision 5): an audio file is one track, a playlist

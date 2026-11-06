@@ -51,6 +51,9 @@
   <data name="PlayerLabel" xml:space="preserve">
     <value>Webamp music player</value>
   </data>
+  <data name="StateSaveFailed" xml:space="preserve">
+    <value>Webamp could not save its state: {0}</value>
+  </data>
   <data name="PlaylistFilter" xml:space="preserve">
     <value>Playlists (.m3u, .m3u8, .pls)</value>
   </data>
