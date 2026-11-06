@@ -1,0 +1,219 @@
+// Webamp host module of the Webamp app (doc/en/architecture.md, "C# and JavaScript").
+//
+// The C# side (WebampPlayer, TrackLibrary) keeps the logic: which files are in the list, where they
+// come from, what to play. This module only does what C# cannot reach: it creates the Webamp
+// instance inside the app's window, turns the bytes of a file into a Blob address Webamp can play,
+// gives that address back to the browser when the track leaves Webamp's list, and reports Webamp's
+// events (close, minimize, track change, list change) to C#.
+//
+// It keeps no state outside one host object per window, so a test drives it with a fake Webamp
+// class (tests/js/webamp-host.test.mjs).
+
+/** Address of the Webamp 2.3.1 bundle (JSZip and music-metadata included), next to this module. */
+const WEBAMP_BUNDLE = new URL('../lib/webamp/webamp.bundle.min.mjs', import.meta.url).href;
+
+/**
+ * Loads the Webamp class from the vendored bundle.
+ * @returns {Promise<Function>} The Webamp constructor.
+ */
+export async function loadWebamp() {
+    const module = await import(WEBAMP_BUNDLE);
+    return module.default;
+}
+
+/**
+ * The options every Webamp of the app is created with (decisions 9 and 17 of doc/en/plan.md).
+ * @param {{ zIndex?: number }} [options] Options from C#.
+ * @returns {object} Webamp options.
+ */
+export function webampOptions(options = {}) {
+    return {
+        // Webamp's own hotkeys listen to the whole page and would take the keys of the other apps.
+        enableHotkeys: false,
+        // No music from the internet in the first version: "Add URL" does nothing (its button is
+        // hidden by WebampWindow.razor.css).
+        handleAddUrlEvent: () => null,
+        zIndex: options.zIndex ?? 0,
+    };
+}
+
+/**
+ * Creates the host of one Webamp window.
+ * @param {HTMLElement} element The element Webamp renders into.
+ * @param {{ onClose?: () => void, onMinimize?: () => void, onTrackChanged?: (track: object | null) => void,
+ *           onPlaylistChanged?: (keys: string[]) => void }} callbacks What C# hears.
+ * @param {{ zIndex?: number }} [options] Options from C#.
+ * @param {{ Webamp?: Function, createObjectURL?: (blob: Blob) => string, revokeObjectURL?: (url: string) => void }} [deps]
+ *        Replaced by the tests.
+ * @returns {Promise<WebampHost>} The host, once Webamp is on screen.
+ */
+export async function createHost(element, callbacks, options = {}, deps = {}) {
+    const Webamp = deps.Webamp ?? await loadWebamp();
+    const host = new WebampHost(new Webamp(webampOptions(options)), callbacks, {
+        createObjectURL: deps.createObjectURL ?? (blob => URL.createObjectURL(blob)),
+        revokeObjectURL: deps.revokeObjectURL ?? (url => URL.revokeObjectURL(url)),
+    });
+    await host.webamp.renderInto(element);
+    return host;
+}
+
+/**
+ * Entry point for Blazor: the same host, its events sent to a .NET object reference.
+ * @param {HTMLElement} element The element Webamp renders into.
+ * @param {{ invokeMethodAsync: (name: string, ...args: any[]) => Promise<any> }} dotNet The WebampPlayer.
+ * @param {{ zIndex?: number }} [options] Options from C#.
+ * @returns {Promise<WebampHost>} The host (an IJSObjectReference for C#).
+ */
+export function create(element, dotNet, options = {}) {
+    const send = (name, ...args) => {
+        // The window may be gone already (the .NET object disposed): nothing to tell anymore.
+        dotNet.invokeMethodAsync(name, ...args).catch(() => {});
+    };
+    return createHost(element, {
+        onClose: () => send('OnWebampClosed'),
+        onMinimize: () => send('OnWebampMinimized'),
+        onTrackChanged: track => send('OnTrackChanged', track),
+        onPlaylistChanged: keys => send('OnPlaylistChanged', keys),
+    }, options);
+}
+
+/** One Webamp instance and the Blob addresses of the tracks it was given. */
+export class WebampHost {
+    /**
+     * @param {object} webamp The Webamp instance.
+     * @param {object} callbacks What C# hears.
+     * @param {{ createObjectURL: (blob: Blob) => string, revokeObjectURL: (url: string) => void }} urls Blob addresses.
+     */
+    constructor(webamp, callbacks, urls) {
+        this.webamp = webamp;
+        this._callbacks = callbacks;
+        this._urls = urls;
+        /** Blob address → C# key, for every track this host gave Webamp and that is still listed. */
+        this._keysByUrl = new Map();
+        /** Addresses already seen in Webamp's list: only those can have left it. */
+        this._listed = new Set();
+        this._lastSignature = '';
+        this._disposed = false;
+        this._unsubscribe = [
+            webamp.onClose(() => this._callbacks.onClose?.()),
+            webamp.onMinimize(() => this._callbacks.onMinimize?.()),
+            webamp.onTrackDidChange(track => this._callbacks.onTrackChanged?.(describeTrack(track))),
+            webamp.store.subscribe(() => this._playlistMayHaveChanged()),
+        ];
+    }
+
+    /**
+     * Adds tracks at the end of Webamp's list.
+     * @param {{ key: string, name: string, mimeType?: string | null, bytes: Uint8Array }[]} tracks The files, read by C#.
+     * @param {boolean} play Whether the first added track starts playing.
+     */
+    addTracks(tracks, play) {
+        if (this._disposed || tracks.length === 0) {
+            return;
+        }
+        const first = this.webamp.getPlaylistTracks().length;
+        this.webamp.appendTracks(tracks.map(track => this._toWebampTrack(track)));
+        if (play) {
+            this.webamp.setCurrentTrack(first);
+            this.webamp.play();
+        }
+    }
+
+    /**
+     * Replaces Webamp's list; the addresses of the tracks that leave it are given back.
+     * @param {{ key: string, name: string, mimeType?: string | null, bytes: Uint8Array }[]} tracks The files, read by C#.
+     * @param {boolean} play Whether the first track starts playing.
+     */
+    replaceTracks(tracks, play) {
+        if (this._disposed) {
+            return;
+        }
+        // setTracksToPlay always starts the first track: stop it when the caller did not ask for it.
+        this.webamp.setTracksToPlay(tracks.map(track => this._toWebampTrack(track)));
+        if (!play) {
+            this.webamp.stop();
+        }
+    }
+
+    /** @returns {string[]} The C# keys of the tracks in Webamp's list, in its order. */
+    playlistKeys() {
+        return this.webamp.getPlaylistTracks()
+            .map(track => this._keysByUrl.get(track.url))
+            .filter(key => key !== undefined);
+    }
+
+    /** @returns {number} How many Blob addresses this host still holds. */
+    get heldAddresses() {
+        return this._keysByUrl.size;
+    }
+
+    /** Stops the music and gives every address back (decision 8: the sound stops on close). */
+    dispose() {
+        if (this._disposed) {
+            return;
+        }
+        this._disposed = true;
+        for (const unsubscribe of this._unsubscribe) {
+            unsubscribe?.();
+        }
+        try {
+            this.webamp.stop();
+        } finally {
+            this.webamp.dispose();
+            for (const url of this._keysByUrl.keys()) {
+                this._urls.revokeObjectURL(url);
+            }
+            this._keysByUrl.clear();
+            this._listed.clear();
+        }
+    }
+
+    _toWebampTrack(track) {
+        const blob = new Blob([track.bytes], track.mimeType ? { type: track.mimeType } : {});
+        const url = this._urls.createObjectURL(blob);
+        this._keysByUrl.set(url, track.key);
+        // A URL track rather than a BlobTrack: given a Blob, Webamp creates the address itself and
+        // never gives it back; this way the host gives it back when the track leaves the list.
+        return { url, defaultName: track.name };
+    }
+
+    // Webamp's store changes for every tick of the clock: only a different list of tracks matters.
+    _playlistMayHaveChanged() {
+        if (this._disposed) {
+            return;
+        }
+        const present = new Set(this.webamp.getPlaylistTracks().map(track => track.url));
+        for (const url of [...this._keysByUrl.keys()]) {
+            if (present.has(url)) {
+                this._listed.add(url);
+            } else if (this._listed.has(url)) {
+                // Webamp adds a batch one track at a time: an address not listed yet is still
+                // arriving; one that was listed and is gone has left the list.
+                this._listed.delete(url);
+                this._keysByUrl.delete(url);
+                this._urls.revokeObjectURL(url);
+            }
+        }
+        const keys = this.playlistKeys();
+        const signature = keys.join('\n');
+        if (signature !== this._lastSignature) {
+            this._lastSignature = signature;
+            this._callbacks.onPlaylistChanged?.(keys);
+        }
+    }
+}
+
+/**
+ * The part of a Webamp track C# reads (artist and title, for the window title of work item 5).
+ * @param {{ metaData?: { artist?: string | null, title?: string | null } } | null | undefined} track
+ * @returns {{ artist: string | null, title: string | null } | null}
+ */
+export function describeTrack(track) {
+    if (track == null) {
+        return null;
+    }
+    return {
+        artist: track.metaData?.artist ?? null,
+        title: track.metaData?.title ?? null,
+    };
+}

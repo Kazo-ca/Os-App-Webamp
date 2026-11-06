@@ -29,7 +29,7 @@ Benoit's answers on 2026-11-06 ("ok" = the recommendation).
 | 3 | Repository base | `kazoos-solution` template on Kazo OS **3.0.0** now (the repository is empty, nothing to migrate); the submodule moves to the version that brings ADR 0231. |
 | 4 | Audio formats | `.mp3 .wav .ogg .oga .opus .flac .m4a .aac .weba` (what browsers play). No other OS app opens audio: Webamp becomes the default app. |
 | 5 | Opening while Webamp is open | One window (`SingleInstancePerUser`). Opening a file **adds it to the list and plays it**; a multiple selection is added whole. File menu entries: "Play in Webamp" and "Add to the Webamp list" (files and folders). |
-| 6 | Display | An OS window that contains Webamp (`renderInto`), sized to its windows; its close and minimize buttons act on the OS window. Floating windows later: [Os#378](https://github.com/Kazo-ca/Os/issues/378). |
+| 6 | Display | An OS window that contains Webamp (`renderInto`), sized to its windows; its close and minimize buttons act on the OS window. Minimize waits for an SDK API ([Os#384](https://github.com/Kazo-ca/Os/issues/384), Benoit's answer A on 2026-11-06): until then only the OS minimize button minimizes; work item 7 wires Webamp's. Floating windows later: [Os#378](https://github.com/Kazo-ca/Os/issues/378). |
 | 7 | Mobile | Desktop only for the first version. |
 | 8 | Background playback | Plays while the window is minimized, stops when it closes. Window title "Artist - Title - Webamp". Media keys through Media Session. |
 | 9 | Music from the internet | Not in the first version, "Add URL" hidden. Later: [#1](https://github.com/Kazo-ca/Os-App-Webamp/issues/1). |
@@ -99,10 +99,10 @@ Series `webamp/base` (created from `main`), one PR per work item to
 | Work item | Branch | Depends on | State |
 | --- | --- | --- | --- |
 | Kazo OS: ADR 0231 coded ([Os#381](https://github.com/Kazo-ca/Os/issues/381)) | `network-drives/app-access` (Kazo-ca/Os repository, PR to `main`) | nothing | To do |
-| 1. Solution, manifest, window that contains Webamp, tracks loaded as `Blob`s | `webamp/1-solution` | nothing | To do |
+| 1. Solution, manifest, window that contains Webamp, tracks loaded as `Blob`s | `webamp/1-solution` | nothing | Done ([architecture](architecture.md)) |
 | 2. Open from the OS: audio types, one window, add and play, menus, dialogs, 1 GB | `webamp/2-open-files` | 1 | To do |
 | 3. `.m3u`, `.m3u8`, `.pls` lists | `webamp/3-playlists` | 1 | To do |
 | 4. `.wsz` skins and the import explanation | `webamp/4-skins` | 1 | To do |
 | 5. Remembered state, title, Media Session, shortcuts, Milkdrop | `webamp/5-state-and-media` | 1 | To do |
 | 6. Store listing, end-to-end tests, `v1.0.0` | `webamp/6-store` | 2 to 5 | To do |
-| 7. Submodule on the OS version with ADR 0231, test on `/mnt` | `webamp/7-network-drive` | Os#381 released, 1 | To do |
+| 7. Submodule on the OS version with ADR 0231, test on `/mnt`; Webamp's minimize button once [Os#384](https://github.com/Kazo-ca/Os/issues/384) is released | `webamp/7-network-drive` | Os#381 released, 1 | To do |
