@@ -56,7 +56,7 @@ Réponses de Benoit le 2026-11-06 (« ok » = la recommandation).
 | Entrées de menu | « Lire dans Webamp » et « Ajouter à la liste de Webamp » sur les fichiers audio, les listes et les dossiers. |
 | Webamp | Bundle `webamp.lazy-bundle.min.mjs` 2.3.1 et Butterchurn dans `wwwroot/lib/` ; un module `webamp-host.js` qui crée l'instance, donne les morceaux en `Blob` et remonte les événements au C#. Le C# garde la logique : listes, chemins, état, intents. |
 | Fenêtre | Contenu à la taille des fenêtres de Webamp (lecteur, égaliseur, liste empilés : 275×348 en taille normale), redimensionnable. `onClose` ferme la fenêtre de l'OS, `onMinimize` la réduit. |
-| Raccourcis | `enableHotkeys` désactivé ; les raccourcis de Webamp n'agissent que quand la fenêtre a le focus. |
+| Raccourcis | L'écouteur de page de `enableHotkeys` est capturé à la création de Webamp et appelé seulement quand la fenêtre a le focus (jamais sur toute la page) : les raccourcis de Webamp n'agissent que quand la fenêtre a le focus. |
 | État | `~/.config/ca.kazo.webamp/state.json` : liste (chemins), morceau, position, volume, balance, égaliseur, skin, disposition des fenêtres, taille double. Un fichier disparu reste dans la liste et est sauté à la lecture, comme dans Winamp. |
 
 ## Choses à faire, dans l'ordre
@@ -105,6 +105,6 @@ parallèle. Série `webamp/base` (créée depuis `main`), une PR par chantier ve
 | 2. Ouvrir depuis l'OS : types audio, une seule fenêtre, ajouter et jouer, menus, dialogues, 1 Go | `webamp/2-open-files` | 1 | À faire |
 | 3. Listes `.m3u`, `.m3u8`, `.pls` | `webamp/3-playlists` | 1 | Fait ([architecture](architecture.md#listes-de-lecture)) |
 | 4. Skins `.wsz` et explication de l'import | `webamp/4-skins` | 1 | À faire |
-| 5. État retenu, titre, Media Session, raccourcis, Milkdrop | `webamp/5-state-and-media` | 1 | À faire |
+| 5. État retenu, titre, Media Session, raccourcis, Milkdrop | `webamp/5-state-and-media` | 1 | Fait ([architecture](architecture.md#état-titre-raccourcis-milkdrop)) |
 | 6. Fiche du Store, tests de bout en bout, `v1.0.0` | `webamp/6-store` | 2 à 5 | À faire |
 | 7. Sous-module sur la version de l'OS avec l'ADR 0231, essai sur `/mnt` ; bouton réduire de Webamp si [Os#384](https://github.com/Kazo-ca/Os/issues/384) est publiée | `webamp/7-network-drive` | Os#381 publiée, 1 | À faire |
