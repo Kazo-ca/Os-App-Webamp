@@ -126,5 +126,15 @@ test('Milkdrop\'s Butterchurn is downloaded only when Milkdrop first opens', { t
         await page.waitForTimeout(200);
     }
     assert.equal(requested.some(url => /butterchurn-presets\/base\.min\./.test(url)), true);
+
+    // Milkdrop does not open over the main window (Webamp alone puts it at 0,0): in the window's
+    // default size, it takes the playlist's place, below the main window and the equalizer.
+    // Milkdrop is Webamp 2.3.1's only generic window (.gen-window).
+    const milkdrop = page.locator('#webamp .gen-window').first();
+    await milkdrop.waitFor({ timeout: 15_000 });
+    await page.waitForTimeout(500);
+    const main = await page.locator('#main-window').boundingBox();
+    const box = await milkdrop.boundingBox();
+    assert.ok(box.y >= main.y + main.height, `Milkdrop (${JSON.stringify(box)}) covers the main window (${JSON.stringify(main)})`);
     await page.close();
 });

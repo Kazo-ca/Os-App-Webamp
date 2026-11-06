@@ -106,5 +106,5 @@ parallèle. Série `webamp/base` (créée depuis `main`), une PR par chantier ve
 | 3. Listes `.m3u`, `.m3u8`, `.pls` | `webamp/3-playlists` | 1 | Fait ([architecture](architecture.md#listes-de-lecture)) |
 | 4. Skins `.wsz` et explication de l'import | `webamp/4-skins` | 1 | Fait ([architecture](architecture.md#skins)) |
 | 5. État retenu, titre, Media Session, raccourcis, Milkdrop | `webamp/5-state-and-media` | 1 | Fait ([architecture](architecture.md#état-titre-raccourcis-milkdrop)) |
-| 6. Fiche du Store, tests de bout en bout, `v1.0.0` | `webamp/6-store` | 2 à 5 | À faire |
+| 6. Fiche du Store, tests de bout en bout, `v1.0.0` | `webamp/6-store` | 2 à 5 | Fait ([architecture](architecture.md#fiche-du-kazo-os-store-et-app-installée)) ; tag `v1.0.0` et PR au catalogue après la fusion dans `main` |
 | 7. Sous-module sur la version de l'OS avec l'ADR 0231, essai sur `/mnt` ; bouton réduire de Webamp si [Os#384](https://github.com/Kazo-ca/Os/issues/384) est publiée | `webamp/7-network-drive` | Os#381 publiée, 1 | À faire |

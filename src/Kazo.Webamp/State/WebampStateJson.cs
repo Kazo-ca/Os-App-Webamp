@@ -284,7 +284,9 @@ internal sealed class WindowDocument
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    NumberHandling = JsonNumberHandling.Strict,
+    // NumberHandling is left at its default (Strict): naming it makes the generated code call
+    // JsonSerializerOptions.set_NumberHandling, which the trimmed Kazo OS removes, and kazopkg then
+    // refuses the app (tests/installed).
     ReadCommentHandling = JsonCommentHandling.Skip,
     AllowTrailingCommas = true)]
 [JsonSerializable(typeof(StateDocument))]

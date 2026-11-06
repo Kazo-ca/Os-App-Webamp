@@ -395,13 +395,63 @@ s'ouvre pour la première fois (le module surveille
 Milkdrop reste dans les menus de Webamp. Une disposition enregistrée avec
 Milkdrop ouvert le charge au démarrage.
 
+**Place de Milkdrop** (chantier 6) : Webamp 2.3.1 laisse la fenêtre Milkdrop en
+0,0, par-dessus la fenêtre principale. Quand elle s'ouvre et recouvre une autre
+fenêtre de Webamp, `milkdropPlacement` la déplace, comme Winamp : à droite des
+autres fenêtres si la fenêtre de l'OS a la place, sinon en dessous, sinon à la
+place de la liste de lecture (sous le lecteur et l'égaliseur), pour qu'elle
+reste visible sans cacher les boutons du lecteur. La place visible est mesurée
+dans la page (`_visibleSurface`), car Webamp centre ses fenêtres dans l'élément
+et son `browserWindowSize` ne correspond pas à l'élément. Une place enregistrée
+est gardée.
+
+## Fiche du Kazo OS Store et app installée
+
+Le dossier `store/` est la fiche du Kazo OS Store (format du catalogue :
+`doc/fr/catalog-format.md` de Kazo-ca/Os-AppMarketPlace) : `icon.png` (256×256,
+rendu de `wwwroot/icons/app.svg`), `short_description.{fr,en}.txt`,
+`description.{fr,en}.md` (fonctions, explication de l'import des skins de la
+décision 20, limites de la première version, licences et note du skin par
+défaut de Winamp 2.91, dessin de Nullsoft, pas sous MIT), `screenshots/1.png` à
+`3.png` (1280×800 : menu des fichiers et Webamp qui joue, liste et égaliseur,
+Milkdrop) et `store.json` (catégorie `multimedia`). Les captures sont prises
+dans l'hôte par `npm run store:screenshots` (`tests/store/screenshots.mjs`),
+avec les morceaux de test du dépôt. L'outil du catalogue
+(`Kazo.Os.MarketPlace.Tool validate` et `check-package`) accepte le dossier
+assemblé comme le fait `publish-to-kazoos-store.yml` : « the package matches
+its folder », 630 802 octets.
+
+Comme pour Chess, `npm run test:installed -- <wwwroot de Kazo OS> <dossier des
+paquets>` (`tests/installed/install-and-play.mjs`) vérifie Webamp tel que le
+Store l'installe, dans l'OS publié et rogné : `sudo kazopkg install` (contrôle
+des API compris), double-clic sur un `.mp3` dans l'explorateur (types associés
+de l'app installée), lecture, CSS isolé lié, Milkdrop avec Butterchurn venu du
+paquet, aucune erreur dans la console. Il a trouvé deux choses :
+
+1. `kazopkg` refusait Webamp : `JsonSerializerOptions.set_NumberHandling`
+   n'existe plus dans l'OS rogné, et le JSON source-généré de `state.json`
+   l'appelait parce que `NumberHandling = Strict` était écrit dans
+   `JsonSourceGenerationOptions`. C'est la valeur par défaut : la ligne est
+   retirée.
+2. Kazo OS 3.0.0 donne les capacités déclarées d'une app à la connexion : une app
+   installée pendant la session n'en a aucune avant la connexion suivante, et
+   lire la musique de l'utilisateur est refusé. Issue
+   [Kazo-ca/Os#386](https://github.com/Kazo-ca/Os/issues/386) ; le test se
+   reconnecte après l'installation, comme devra le faire l'utilisateur d'ici là.
+
+Vérifié le 2026-11-06 avec Kazo OS 3.0.0 (sous-module `v3.0.0`, publication
+Release de `OS/Kazo.Os.Ecosystem`) et le paquet de `KazoOsPack` (14 fichiers,
+non signé : `KOSAPP0063`). Le tag `v1.0.0` et la PR au catalogue viennent après
+la fusion dans `main`, par le workflow « Tag a release ».
+
 ## Tests
 
 | Suite | Commande | Contenu |
 | --- | --- | --- |
 | C# (xUnit) | `dotnet test Kazo.Webamp.slnx -c Release` | Manifeste ; skins : `SkinArchive` (archive, `main.bmp` en casse et dossier quelconques, pas une archive, sans `main.bmp`, trop gros), `SkinLibrary` (dossier, liste triée et fichiers ignorés, copie, skin déjà dans le dossier, remplacement, refus sans copie, nom rendu sûr), `SkinController` (skin ouvert mis et retenu, skin de l'ordinateur, skin cassé refusé et skin en cours gardé, choix du menu et skin de base, skin retenu disparu, réglages cassés, notification une seule fois et de nouveau après un échec) ; `TrackLibrary` : ajout dans l'ordre avec le type, ajout à la fin, fichier illisible, rien envoyé quand rien ne se lit, morceau sorti de la liste oublié, ordre de Webamp, remplacement, changements de liste pendant l'ajout, échec de Webamp ; types audio ; listes : lecture (chemins relatifs et absolus, `\`, `#EXTINF`, adresses web, lecteurs Windows, Latin-1, UTF-8 avec et sans marque, `.pls`), écriture (UTF-8, chemins relatifs, titres sur une ligne), aller-retour, ouverture d'une liste avec d'autres fichiers, liste illisible, titre et durée jusqu'à Webamp, « Load list », « Save list » ; types associés et capacités; chantier 2 : intents (fichier, menu des fichiers, `launch`), dossiers récursifs triés par chemin, dossier illisible, file d'ouverture (attente, fusion d'une rafale, ordre, erreur), avertissement de 1 Go (une fois, réarmé sous la limite), entrées du menu dans `manifest.json` ; état : aller-retour du JSON, fichier corrompu ou d'une autre version = état vide, valeurs ramenées dans leurs limites, chemins refusés, fichier absent, dossier créé ; fichiers disparus gardés à leur place et sautés, morceau courant suivi ; écritures regroupées, immédiates à la fermeture, jamais deux à la fois, échec signalé ; reprise de la liste et de la position ; titre de la fenêtre. |
-| JavaScript | `npm test` | `webamp-host.js` avec un faux Webamp : options, adresses créées, gardées pendant l'arrivée d'un lot, rendues à la sortie de la liste, au remplacement et à `dispose`, rapports dédoublonnés, événements ; « Load list » et « Save list » (morceaux avec clé, titre, durée, morceaux sans clé comptés), durée d'une liste donnée à Webamp ; skins au démarrage (`availableSkins`, `initialSkin`), ajout trié et mis, remplacement, adresses rendues. `webamp-skins.js` avec un faux menu : entrées reconnues par leur place, « Load Skin… » pris à Webamp, annulation, choix rapportés, dépôt d'un skin; `FilePromptInterceptor` : sélecteur de musique intercepté pendant un geste sur Webamp, pas hors de Webamp ni pour un skin ou un préréglage, posé une fois par page et retiré avec la dernière fenêtre ; Media Session, disposition et réglages remis avant la première image, état lu, changements signalés (l'horloge par pas de 5 s), reprise en pause à une position, raccourcis seulement avec le focus (écouteur de Webamp capturé), Milkdrop chargé à la première ouverture. |
-| E2E (Playwright) | `npm run test:e2e` après le build Release | Webamp s'ouvre depuis le menu Applications dans sa fenêtre, sans « Add URL » ; un `.mp3` mis dans `~` par l'explorateur et ouvert par `launch ca.kazo.webamp /home/neo/tone.mp3` joue avec ses étiquettes, et le bouton fermer de Webamp ferme la fenêtre de l'OS ; un fichier absent est signalé ; « Save list » enregistre `mix.m3u8` par la boîte de l'OS, « New list » vide Webamp et « Load list » le remplit à nouveau ; un `.m3u` ouvert joue son morceau et signale le fichier manquant et l'adresse web. Skins (`skins.e2e.mjs`, skins fabriqués par `fixtures/make-skin.mjs`) : la notification au premier lancement, un `.wsz` ouvert par `launch` dans Webamp déjà ouvert est mis et listé dans le menu Skins ; « Load Skin… » met un skin et le garde, un skin cassé est refusé par une boîte de message et le skin reste, Webamp rouvert démarre avec le skin et sans nouvelle notification; chantier 2 (`open-files.e2e.mjs`) : un double-clic sur un `.mp3` de l'explorateur le joue, deux fichiers ouverts ensemble s'ajoutent dans l'ordre et le premier joue, dans la même fenêtre ; « Ajouter à la liste de Webamp » sur un dossier ajoute ses morceaux triés sans jouer, « Lire dans Webamp » joue ; éjecter et ADD ▸ Add file montrent la boîte de l'OS, jamais celle du navigateur ; titre « Kazo Test - Tone 440 - Webamp » dans la barre des tâches, puis après un rechargement de la page Webamp revient avec sa liste, en pause, avec le même volume et repeat ; les raccourcis de Webamp ne font rien quand l'explorateur a le focus et agissent quand Webamp l'a ; Butterchurn n'est téléchargé qu'à l'ouverture de Milkdrop (`state.e2e.mjs`). |
+| JavaScript | `npm test` | `webamp-host.js` avec un faux Webamp : options, adresses créées, gardées pendant l'arrivée d'un lot, rendues à la sortie de la liste, au remplacement et à `dispose`, rapports dédoublonnés, événements ; « Load list » et « Save list » (morceaux avec clé, titre, durée, morceaux sans clé comptés), durée d'une liste donnée à Webamp ; skins au démarrage (`availableSkins`, `initialSkin`), ajout trié et mis, remplacement, adresses rendues. `webamp-skins.js` avec un faux menu : entrées reconnues par leur place, « Load Skin… » pris à Webamp, annulation, choix rapportés, dépôt d'un skin; `FilePromptInterceptor` : sélecteur de musique intercepté pendant un geste sur Webamp, pas hors de Webamp ni pour un skin ou un préréglage, posé une fois par page et retiré avec la dernière fenêtre ; Media Session, disposition et réglages remis avant la première image, état lu, changements signalés (l'horloge par pas de 5 s), reprise en pause à une position, raccourcis seulement avec le focus (écouteur de Webamp capturé), Milkdrop chargé à la première ouverture ; place de Milkdrop (`windowBox`, à droite, en dessous, à la place de la liste, place gardée). |
+| E2E (Playwright) | `npm run test:e2e` après le build Release | Webamp s'ouvre depuis le menu Applications dans sa fenêtre, sans « Add URL » ; un `.mp3` mis dans `~` par l'explorateur et ouvert par `launch ca.kazo.webamp /home/neo/tone.mp3` joue avec ses étiquettes, et le bouton fermer de Webamp ferme la fenêtre de l'OS ; un fichier absent est signalé ; « Save list » enregistre `mix.m3u8` par la boîte de l'OS, « New list » vide Webamp et « Load list » le remplit à nouveau ; un `.m3u` ouvert joue son morceau et signale le fichier manquant et l'adresse web. Skins (`skins.e2e.mjs`, skins fabriqués par `fixtures/make-skin.mjs`) : la notification au premier lancement, un `.wsz` ouvert par `launch` dans Webamp déjà ouvert est mis et listé dans le menu Skins ; « Load Skin… » met un skin et le garde, un skin cassé est refusé par une boîte de message et le skin reste, Webamp rouvert démarre avec le skin et sans nouvelle notification; chantier 2 (`open-files.e2e.mjs`) : un double-clic sur un `.mp3` de l'explorateur le joue, deux fichiers ouverts ensemble s'ajoutent dans l'ordre et le premier joue, dans la même fenêtre ; « Ajouter à la liste de Webamp » sur un dossier ajoute ses morceaux triés sans jouer, « Lire dans Webamp » joue ; éjecter et ADD ▸ Add file montrent la boîte de l'OS, jamais celle du navigateur ; titre « Kazo Test - Tone 440 - Webamp » dans la barre des tâches, puis après un rechargement de la page Webamp revient avec sa liste, en pause, avec le même volume et repeat ; les raccourcis de Webamp ne font rien quand l'explorateur a le focus et agissent quand Webamp l'a ; Butterchurn n'est téléchargé qu'à l'ouverture de Milkdrop, qui ne recouvre pas la fenêtre principale (`state.e2e.mjs`). |
+| App installée | `npm run test:installed -- <wwwroot> <paquets>` | Voir « Fiche du Kazo OS Store et app installée ». Pas dans la CI (publication de l'OS d'une dizaine de minutes). |
 
 Les `.mp3` de test (`tests/e2e/fixtures/tone.mp3` et `tone-220.mp3`, 4 s, 16 Ko) sont fabriqués par
 `tests/e2e/fixtures/make-tone.sh` (ffmpeg) et validé dans le dépôt ;
@@ -416,3 +466,4 @@ Les `.mp3` de test (`tests/e2e/fixtures/tone.mp3` et `tone-220.mp3`, 4 s, 16 Ko)
 | 3. `webamp/3-playlists` | Listes de lecture : lire, écrire, ouvrir, « Load list », « Save list ». |
 | 4. `webamp/4-skins` | Skins : type `.wsz`, dossier des skins, « Load Skin… », skin retenu, explication de l'import. |
 | 5. `webamp/5-state-and-media` | État retenu, titre de la fenêtre, Media Session, raccourcis avec le focus, Milkdrop paresseux. |
+| 6. `webamp/6-store` | Fiche du Kazo OS Store, captures, app installée par `kazopkg` vérifiée, place de Milkdrop. |

@@ -44,4 +44,17 @@ dotnet test Kazo.Webamp.slnx -c Release --no-build   # C# (xUnit)
 npm ci
 npm test                                            # le module JavaScript (node --test)
 npm run test:e2e                                    # Webamp dans l'hôte Kazo OS (Playwright, Chromium)
+npm run test:installed -- <wwwroot de Kazo OS> <paquets>   # Webamp installé par kazopkg dans l'OS rogné
+npm run store:screenshots                           # les captures du Kazo OS Store (store/screenshots)
 ```
+
+`test:installed` demande une publication de Kazo OS (`dotnet publish external/KazoOs/wasm2/KazoOs/OS/Kazo.Os.Ecosystem -c Release`,
+son `wwwroot`) et le paquet de Webamp (`dotnet build src/Kazo.Webamp -c Release -t:KazoOsPack`, dossier
+`src/Kazo.Webamp/bin/kazoos-packages`). Voir l'[architecture](doc/fr/architecture.md#fiche-du-kazo-os-store-et-app-installée).
+
+## Installer
+
+Une fois publié : depuis le Kazo OS Store (catégorie Multimédia), ou `sudo kazopkg install Kazo-ca/Os-App-Webamp`
+(branche `kazoos-packages` de ce dépôt). Kazo OS 3.0.0 donne ses capacités à une app installée à la
+connexion suivante : déconnectez-vous et reconnectez-vous avant d'ouvrir de la musique
+([Kazo-ca/Os#386](https://github.com/Kazo-ca/Os/issues/386)).

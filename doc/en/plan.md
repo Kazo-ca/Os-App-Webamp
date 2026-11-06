@@ -104,5 +104,5 @@ Series `webamp/base` (created from `main`), one PR per work item to
 | 3. `.m3u`, `.m3u8`, `.pls` lists | `webamp/3-playlists` | 1 | Done ([architecture](architecture.md#playlists)) |
 | 4. `.wsz` skins and the import explanation | `webamp/4-skins` | 1 | Done ([architecture](architecture.md#skins)) |
 | 5. Remembered state, title, Media Session, shortcuts, Milkdrop | `webamp/5-state-and-media` | 1 | Done ([architecture](architecture.md#state-title-shortcuts-milkdrop)) |
-| 6. Store listing, end-to-end tests, `v1.0.0` | `webamp/6-store` | 2 to 5 | To do |
+| 6. Store listing, end-to-end tests, `v1.0.0` | `webamp/6-store` | 2 to 5 | Done ([architecture](architecture.md#kazo-os-store-listing-and-installed-app)); `v1.0.0` tag and catalog PR after the merge into `main` |
 | 7. Submodule on the OS version with ADR 0231, test on `/mnt`; Webamp's minimize button once [Os#384](https://github.com/Kazo-ca/Os/issues/384) is released | `webamp/7-network-drive` | Os#381 released, 1 | To do |
