@@ -1,0 +1,63 @@
+name: CI
+
+# Builds the Release profile (Kazo OS packages from nuget.org, at the version of the
+# external/KazoOs submodule) and runs every test suite: C# unit tests, the JavaScript modules under
+# node, and the end-to-end runs of the app inside the Kazo OS host (Playwright, Chromium).
+# Pushes to the integration branches, and every PR (work items are pushed and tested through
+# their PR, so a work-item push does not run twice).
+on:
+  push:
+    branches: [main, "webamp/base"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "ci-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout (with the Kazo OS submodule)
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      # ADR 0176 §6 of Kazo OS: never a modified submodule, always exactly on its release tag.
+      - name: Check the Kazo OS submodule
+        run: bash .github/scripts/check-kazoos-submodule.sh
+
+      # The Release profile: Kazo OS packages from nuget.org, at the submodule's version. This is
+      # what the Kazo OS Store compiles.
+      - name: Build (Release, packages)
+        run: dotnet build Kazo.Webamp.slnx -c Release
+
+      - name: C# unit tests
+        run: dotnet test Kazo.Webamp.slnx -c Release --no-build
+
+      - name: Install JavaScript test tools
+        run: npm ci
+
+      - name: Host module tests
+        run: npm test
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: npm run test:e2e

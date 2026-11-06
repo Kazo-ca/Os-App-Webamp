@@ -1,0 +1,13 @@
+@inherits WindowAppBase
+
+<div class="webamp-window" role="application" aria-label="@L["PlayerLabel"]">
+    @* Webamp renders into this element (renderInto): its three windows, on the window's dark backdrop. *@
+    <div class="webamp-surface" @ref="_surface"></div>
+    @if (_status is not null)
+    {
+        <div class="app-status @(_failed ? "failed" : string.Empty)" role="@(_failed ? "alert" : "status")">
+            <span class="app-status-text">@_status</span>
+            <button type="button" class="app-status-dismiss" aria-label="@L["Dismiss"]" @onclick="Dismiss">×</button>
+        </div>
+    }
+</div>

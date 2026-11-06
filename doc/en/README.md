@@ -4,4 +4,5 @@
 
 | Document | Content |
 | --- | --- |
-| [`plan.md`](plan.md) | Proposed plan: goal, decisions, the app, order of the work, tests, licenses. |
+| [`plan.md`](plan.md) | Validated plan: goal, decisions, the app, order of the work, tests, licenses, progress. |
+| [`architecture.md`](architecture.md) | The code: solution, app, C# ↔ JavaScript contract, close and minimize, opening from the OS, playlists, skins, state, title, shortcuts and Milkdrop, Kazo OS Store listing and installed app, tests. |

@@ -2,9 +2,9 @@
 
 # Plan : l'app Webamp pour Kazo OS
 
-Plan **proposé le 2026-11-06**, à valider par Benoit (fil « Concevoir l'app
-Webamp avec Benoit »). Ce document fixe le but, les décisions et l'ordre des
-choses à faire ; aucun code n'est écrit avant sa validation.
+Plan **validé le 2026-11-06** par Benoit (fil « Concevoir l'app Webamp avec
+Benoit », plan fusionné par la PR #2). Ce document fixe le but, les décisions et
+l'ordre des choses à faire ; l'avancement est en fin de page.
 
 ## But
 
@@ -26,11 +26,11 @@ Réponses de Benoit le 2026-11-06 (« ok » = la recommandation).
 | # | Sujet | Décision |
 | --- | --- | --- |
 | 1 | « Remote folder » | Le lecteur réseau de l'ADR 0181 : `/mnt/<nom>`, Chrome et Edge sur ordinateur. |
-| 2 | Accès à `/mnt` | Changement de l'OS : les lecteurs réseau de l'utilisateur comptent comme ses fichiers personnels (`filesystem.user-home.*`). [ADR 0231](https://github.com/Kazo-ca/Os/pull/382), issue [Os#381](https://github.com/Kazo-ca/Os/issues/381). Sur un OS qui ne l'a pas encore, un fichier de `/mnt` donne « Permission refusée ». |
+| 2 | Accès à `/mnt` | Changement de l'OS : les lecteurs réseau de l'utilisateur comptent comme ses fichiers personnels (`filesystem.user-home.*`). [ADR 0231](https://github.com/Kazo-ca/Os/blob/main/doc/fr/wasm/dev/adr/0231-network-drives-count-as-personal-files.md), issue [Os#381](https://github.com/Kazo-ca/Os/issues/381). Sur un OS qui ne l'a pas encore, un fichier de `/mnt` donne « Permission refusée ». |
 | 3 | Base du dépôt | Modèle `kazoos-solution` sur Kazo OS **3.0.0** maintenant (le dépôt est vide, rien à migrer) ; le sous-module avance à la version qui apporte l'ADR 0231. |
 | 4 | Formats audio | `.mp3 .wav .ogg .oga .opus .flac .m4a .aac .weba` (ce que lisent les navigateurs). Aucune autre app de l'OS n'ouvre l'audio : Webamp devient l'app par défaut. |
 | 5 | Ouvrir quand Webamp est ouvert | Une seule fenêtre (`SingleInstancePerUser`). Ouvrir un fichier **l'ajoute à la liste et le joue** ; une sélection multiple s'ajoute en entier. Entrées du menu des fichiers : « Lire dans Webamp » et « Ajouter à la liste de Webamp » (fichiers et dossiers). |
-| 6 | Affichage | Une fenêtre de l'OS qui contient Webamp (`renderInto`), à la taille de ses fenêtres ; ses boutons fermer et réduire agissent sur la fenêtre de l'OS. Fenêtres flottantes plus tard : [Os#378](https://github.com/Kazo-ca/Os/issues/378). |
+| 6 | Affichage | Une fenêtre de l'OS qui contient Webamp (`renderInto`), à la taille de ses fenêtres ; ses boutons fermer et réduire agissent sur la fenêtre de l'OS. Réduire attend une API du SDK ([Os#384](https://github.com/Kazo-ca/Os/issues/384), réponse A de Benoit le 2026-11-06) : d'ici là, seul le bouton réduire de l'OS réduit ; le chantier 7 branche celui de Webamp. Fenêtres flottantes plus tard : [Os#378](https://github.com/Kazo-ca/Os/issues/378). |
 | 7 | Mobile | Ordinateur seulement pour la première version. |
 | 8 | Lecture en arrière-plan | Joue quand la fenêtre est réduite, s'arrête à la fermeture. Titre de la fenêtre « Artiste - Titre - Webamp ». Touches multimédia par Media Session. |
 | 9 | Musique depuis internet | Pas dans la première version, « Add URL » masqué. Plus tard : [#1](https://github.com/Kazo-ca/Os-App-Webamp/issues/1). |
@@ -44,7 +44,7 @@ Réponses de Benoit le 2026-11-06 (« ok » = la recommandation).
 | 17 | Raccourcis clavier | Ceux de Webamp seulement quand sa fenêtre a le focus (l'option `enableHotkeys` écoute toute la page et volerait les touches des autres apps). |
 | 18 | Identité | Id `ca.kazo.webamp`, nom « Webamp », éditeur `pub.kazo`, catégorie `multimedia`, version `1.0.0`, licence MIT. |
 | 19 | Documents | Ce plan dans ce dépôt (fr + en) ; l'ADR 0231 dans Kazo OS. |
-| 20 | Expliquer l'import d'un skin | **Question posée, en attente.** Recommandation : une notification au premier lancement (« Pour changer de skin : double-cliquez un fichier .wsz, ou clic droit ▸ Skins ▸ Load Skin… ») et la même explication dans la fiche du Kazo OS Store et le README. |
+| 20 | Expliquer l'import d'un skin | Recommandation retenue (Benoit a lancé l'implémentation sans autre choix) : une notification au premier lancement (« Pour changer de skin : double-cliquez un fichier .wsz, ou clic droit ▸ Skins ▸ Load Skin… ») et la même explication dans la fiche du Kazo OS Store et le README. |
 
 ## L'app
 
@@ -56,8 +56,8 @@ Réponses de Benoit le 2026-11-06 (« ok » = la recommandation).
 | Entrées de menu | « Lire dans Webamp » et « Ajouter à la liste de Webamp » sur les fichiers audio, les listes et les dossiers. |
 | Webamp | Bundle `webamp.lazy-bundle.min.mjs` 2.3.1 et Butterchurn dans `wwwroot/lib/` ; un module `webamp-host.js` qui crée l'instance, donne les morceaux en `Blob` et remonte les événements au C#. Le C# garde la logique : listes, chemins, état, intents. |
 | Fenêtre | Contenu à la taille des fenêtres de Webamp (lecteur, égaliseur, liste empilés : 275×348 en taille normale), redimensionnable. `onClose` ferme la fenêtre de l'OS, `onMinimize` la réduit. |
-| Raccourcis | `enableHotkeys` désactivé ; les raccourcis de Webamp n'agissent que quand la fenêtre a le focus. |
-| État | `~/.config/ca.kazo.webamp/state.json` : liste (chemins), morceau, position, volume, balance, égaliseur, skin, disposition des fenêtres, taille double. Un fichier disparu reste dans la liste et est sauté à la lecture, comme dans Winamp. |
+| Raccourcis | L'écouteur de page de `enableHotkeys` est capturé à la création de Webamp et appelé seulement quand la fenêtre a le focus (jamais sur toute la page) : les raccourcis de Webamp n'agissent que quand la fenêtre a le focus. |
+| État | `~/.config/ca.kazo.webamp/state.json` : liste (chemins), morceau, position, volume, balance, égaliseur, disposition des fenêtres, taille double ; le skin en cours est gardé par le chantier 4 dans `skins.json` (une seule place). Un fichier disparu reste dans la liste et est sauté à la lecture, comme dans Winamp. |
 
 ## Choses à faire, dans l'ordre
 
@@ -91,3 +91,20 @@ Comme Chess : tests C# (xUnit) pour les listes (`.m3u`, `.m3u8`, `.pls`, chemins
 - Adresse de fichier servie à la demande (sans copie en mémoire) : [Os#379](https://github.com/Kazo-ca/Os/issues/379).
 - Glisser des fichiers de l'explorateur vers Webamp : [Os#380](https://github.com/Kazo-ca/Os/issues/380).
 - Mobile.
+
+## Avancement
+
+Le 2026-11-06, Benoit a lancé l'implémentation en plusieurs sessions en
+parallèle. Série `webamp/base` (créée depuis `main`), une PR par chantier vers
+`webamp/base`, puis une PR `webamp/base` → `main` que Benoit fusionne.
+
+| Chantier | Branche | Dépend de | État |
+| --- | --- | --- | --- |
+| Kazo OS : ADR 0231 codée ([Os#381](https://github.com/Kazo-ca/Os/issues/381)) | `network-drives/app-access` (dépôt Kazo-ca/Os, PR vers `main`) | rien | À faire |
+| 1. Solution, manifeste, fenêtre qui contient Webamp, chargement des morceaux en `Blob` | `webamp/1-solution` | rien | Fait ([architecture](architecture.md)) |
+| 2. Ouvrir depuis l'OS : types audio, une seule fenêtre, ajouter et jouer, menus, dialogues, 1 Go | `webamp/2-open-files` | 1 | Fait ([architecture](architecture.md#ouvrir-depuis-los)) |
+| 3. Listes `.m3u`, `.m3u8`, `.pls` | `webamp/3-playlists` | 1 | Fait ([architecture](architecture.md#listes-de-lecture)) |
+| 4. Skins `.wsz` et explication de l'import | `webamp/4-skins` | 1 | Fait ([architecture](architecture.md#skins)) |
+| 5. État retenu, titre, Media Session, raccourcis, Milkdrop | `webamp/5-state-and-media` | 1 | Fait ([architecture](architecture.md#état-titre-raccourcis-milkdrop)) |
+| 6. Fiche du Store, tests de bout en bout, `v1.0.0` | `webamp/6-store` | 2 à 5 | Fait ([architecture](architecture.md#fiche-du-kazo-os-store-et-app-installée)) ; tag `v1.0.0` et PR au catalogue après la fusion dans `main` |
+| 7. Sous-module sur la version de l'OS avec l'ADR 0231, essai sur `/mnt` ; bouton réduire de Webamp si [Os#384](https://github.com/Kazo-ca/Os/issues/384) est publiée | `webamp/7-network-drive` | Os#381 publiée, 1 | À faire |
