@@ -5,4 +5,4 @@
 | Document | Contenu |
 | --- | --- |
 | [`plan.md`](plan.md) | Plan validé : but, décisions, l'app, ordre des choses à faire, tests, licences, avancement. |
-| [`architecture.md`](architecture.md) | Le code : solution, app, contrat C# ↔ JavaScript, fermer et réduire, listes de lecture, skins, tests. |
+| [`architecture.md`](architecture.md) | Le code : solution, app, contrat C# ↔ JavaScript, fermer et réduire, ouvrir depuis l'OS, listes de lecture, skins, tests. |

@@ -1,5 +1,9 @@
 using Kazo.Os.App.Abstractions;
+using Kazo.Os.AppSdk.Blazor.Files;
+using Kazo.Os.AppSdk.Files;
+using Kazo.Os.AppSdk.Icons;
 using Kazo.Webamp.Playlists;
+using Kazo.Webamp.Tracks;
 
 namespace Kazo.Webamp;
 
@@ -9,7 +13,8 @@ namespace Kazo.Webamp;
 /// </summary>
 /// <remarks>
 /// Work item 1 declares the base: the window, desktop only, one window per user, reading the
-/// user's music and the app's own folder. Work items 2 to 5 add their file types and capabilities.
+/// user's music and the app's own folder. Work item 2 adds the audio types (Webamp becomes the app
+/// that opens them), the OS dialogs and the two file menu entries. Work items 3 to 5 add theirs.
 /// </remarks>
 [AppManifest]
 public sealed class WebampApp : AppDefinition
@@ -19,6 +24,18 @@ public sealed class WebampApp : AppDefinition
 
     /// <summary>Height of Webamp's three windows stacked at normal size.</summary>
     public const int ContentHeight = 348;
+
+    /// <summary>
+    /// The intent of the two file menu entries (decision 5): the payload names the entry,
+    /// <see cref="PlayEntry"/> or <see cref="EnqueueEntry"/>, and the files or folders.
+    /// </summary>
+    public const string FilesIntent = "ca.kazo.webamp.files.v1";
+
+    /// <summary>Name of the "Play in Webamp" entry: add at the end of the list and play.</summary>
+    public const string PlayEntry = "play";
+
+    /// <summary>Name of the "Add to Webamp's list" entry: add at the end of the list, without playing.</summary>
+    public const string EnqueueEntry = "enqueue";
 
     /// <inheritdoc />
     public override string Id => "ca.kazo.webamp";
@@ -62,16 +79,23 @@ public sealed class WebampApp : AppDefinition
         // Work items 3 and 4: "Save list" writes a .m3u8 where the user chose, and skins opened or
         // loaded are copied to ~/.local/share/webamp/skins/ (decisions 10 and 11).
         AppCapabilities.FileSystemUserHomeWrite,
-        // "Load list" and "Save list" of Webamp open the OS dialogs (work item 3).
+        // Webamp's "Open", "Add file" (work item 2) and "Load list" (work item 3).
         AppCapabilities.DialogFileOpen,
+        // Webamp's "Save list" (work item 3).
         AppCapabilities.DialogFileSave,
+        // Webamp's "Add dir" (work item 2, decision 16).
+        AppCapabilities.DialogFolderSelect,
+        // "Play in Webamp" and "Add to Webamp's list" in the file menus (work item 2, decision 5).
+        AppCapabilities.ShellContextMenu,
         // The first launch explains how to import a skin (work item 4, decision 20).
         AppCapabilities.NotificationsPost,
     ];
 
     /// <inheritdoc />
     /// <remarks>
-    /// Work item 3: playlists. Opening one adds its tracks to Webamp's list and plays the first one
+    /// Decision 4 (work item 2): the formats browsers play. No other OS app opens audio, so Webamp is
+    /// their default app; each type comes from <see cref="AudioMediaTypes"/>, which also types the
+    /// Blob. Work item 3: playlists. Opening one adds its tracks to Webamp's list and plays the first one
     /// (decisions 5 and 10). Work item 4: Winamp 2 skins; opening one puts it on and keeps it in the
     /// Skins menu (decision 11).
     /// </remarks>
@@ -80,11 +104,57 @@ public sealed class WebampApp : AppDefinition
         new(PlaylistFormats.M3uMediaType, [".m3u"], ["open"]),
         new(PlaylistFormats.M3u8MediaType, [".m3u8"], ["open"]),
         new(PlaylistFormats.PlsMediaType, [".pls"], ["open"]),
+        new("audio/mpeg", [".mp3"], ["open"]),
+        new("audio/wav", [".wav"], ["open"]),
+        new("audio/ogg", [".ogg", ".oga"], ["open"]),
+        new("audio/opus", [".opus"], ["open"]),
+        new("audio/flac", [".flac"], ["open"]),
+        new("audio/mp4", [".m4a"], ["open"]),
+        new("audio/aac", [".aac"], ["open"]),
+        new("audio/webm", [".weba"], ["open"]),
         new(SkinMediaType, [".wsz"], ["open"]),
     ];
 
     /// <summary>Media type of a Winamp 2 skin (<c>.wsz</c>).</summary>
     public const string SkinMediaType = "application/x-winamp-skin";
+
+    /// <inheritdoc />
+    public override IReadOnlyList<AppIntentDeclarationManifest> Intents => [new(FilesIntent)];
+
+    /// <summary>
+    /// The file menu entries (decision 5, ADR 0151 and 0159 of Kazo OS): "Play in Webamp" and "Add to
+    /// Webamp's list", on audio files, playlists (their tracks) and folders (a folder brings its audio
+    /// files and those of its subfolders, sorted by path). One launch carries the whole selection, in
+    /// its order.
+    /// </summary>
+    /// <param name="context">Records the entries; the build writes them to manifest.json.</param>
+    [RegisterFileContextMenu]
+    public static void RegisterFileContextMenu(RegisterFileContextMenuContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        IReadOnlyList<string> types =
+        [
+            .. AudioMediaTypes.Extensions.Order(StringComparer.Ordinal),
+            .. PlaylistFormats.Extensions,
+            "inode/directory",
+        ];
+        context.Register(
+            title: "Menu.Play",
+            name: PlayEntry,
+            intent: FilesIntent,
+            icon: KazoIcons.Vector(IconLibrary.Lucide, "play"),
+            scope: FileMenuScope.File | FileMenuScope.Directory,
+            types: types,
+            after: KazoFileMenuItems.Open);
+        context.Register(
+            title: "Menu.Enqueue",
+            name: EnqueueEntry,
+            intent: FilesIntent,
+            icon: KazoIcons.Vector(IconLibrary.Lucide, "list-plus"),
+            scope: FileMenuScope.File | FileMenuScope.Directory,
+            types: types,
+            after: PlayEntry);
+    }
 
     /// <inheritdoc />
     public override IReadOnlyList<string> Icons => ["icons/app.svg"];

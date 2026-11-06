@@ -90,4 +90,25 @@
   <data name="UrlsIgnored" xml:space="preserve">
     <value>{0} web address(es) of the list left out: Webamp plays the files of Kazo OS only.</value>
   </data>
+  <data name="AddFilesTitle" xml:space="preserve">
+    <value>Add files to Webamp</value>
+  </data>
+  <data name="AddFolderTitle" xml:space="preserve">
+    <value>Add a folder to Webamp</value>
+  </data>
+  <data name="MemoryWarning" xml:space="preserve">
+    <value>The music in Webamp's list now takes {0} GB of memory. Past 1 GB the browser may slow down or close the page. You can go on; removing tracks from the list frees their memory.</value>
+  </data>
+  <data name="MemoryWarningTitle" xml:space="preserve">
+    <value>Webamp: a lot of music in memory</value>
+  </data>
+  <data name="MusicFilter" xml:space="preserve">
+    <value>Music and playlists</value>
+  </data>
+  <data name="NoAudioFiles" xml:space="preserve">
+    <value>{0} has no audio file Webamp can play.</value>
+  </data>
+  <data name="OpenTitle" xml:space="preserve">
+    <value>Open in Webamp</value>
+  </data>
 </root>
