@@ -1,0 +1,10 @@
+{
+  "appId": "ca.kazo.webamp",
+  "versions": [
+    {
+      "version": "1.0.0",
+      "path": "1.0.0/ca.kazo.webamp-1.0.0.kazoapp",
+      "sha256": "4e10a3740659fd10f7275cdf9f992c1ec92aa4566e5f60d13fc9df1169916887"
+    }
+  ]
+}
