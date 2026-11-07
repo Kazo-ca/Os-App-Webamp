@@ -24,8 +24,8 @@ cours reste. Webamp le rappelle par une notification à son premier lancement.
 
 ## Compiler et lancer
 
-Le dépôt a été créé avec le modèle `kazoos-solution` de Kazo OS, sur Kazo OS 3.0.0
-(`external/KazoOs`, un sous-module sur le tag `v3.0.0`).
+Le dépôt a été créé avec le modèle `kazoos-solution` de Kazo OS, aujourd'hui sur Kazo OS 3.1.0
+(`external/KazoOs`, un sous-module sur le tag `v3.1.0`).
 
 ```bash
 git clone --recurse-submodules https://github.com/Kazo-ca/Os-App-Webamp.git
@@ -55,6 +55,4 @@ son `wwwroot`) et le paquet de Webamp (`dotnet build src/Kazo.Webamp -c Release 
 ## Installer
 
 Une fois publié : depuis le Kazo OS Store (catégorie Multimédia), ou `sudo kazopkg install Kazo-ca/Os-App-Webamp`
-(branche `kazoos-packages` de ce dépôt). Kazo OS 3.0.0 donne ses capacités à une app installée à la
-connexion suivante : déconnectez-vous et reconnectez-vous avant d'ouvrir de la musique
-([Kazo-ca/Os#386](https://github.com/Kazo-ca/Os/issues/386)).
+(branche `kazoos-packages` de ce dépôt). Webamp demande Kazo OS 3.1.0 ou plus récent.

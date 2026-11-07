@@ -12,6 +12,8 @@ lecture et visualisation Milkdrop, comme à l'époque.
   Webamp » (un dossier ajoute ses musiques et celles de ses sous-dossiers, triées par chemin).
 - « Open », « Add file » et « Add dir » de Webamp ouvrent les dialogues de Kazo OS.
 - Une seule fenêtre : ce que vous ouvrez s'ajoute à la liste en cours.
+- Les **lecteurs réseau** aussi : les musiques, listes et dossiers d'un dossier de votre ordinateur
+  monté dans Kazo OS (`/mnt/<nom>`, Chrome et Edge sur ordinateur) s'ouvrent comme vos fichiers.
 
 ## Listes de lecture
 
@@ -31,16 +33,14 @@ ensuite dans le menu Skins. Une notification le rappelle au premier lancement.
 - Le titre de la fenêtre suit le morceau (« Artiste - Titre - Webamp ») ; les touches multimédia du
   clavier fonctionnent.
 - Les raccourcis de Webamp n'agissent que quand sa fenêtre a le focus.
+- Le bouton réduire de Webamp réduit sa fenêtre de Kazo OS ; la musique continue.
 - **Milkdrop** (Butterchurn, 2 Mo) n'est téléchargé qu'à la première ouverture de sa fenêtre.
 
 ## Limites de la première version
 
 - Ordinateur seulement (pas de version téléphone).
 - Pas de musique depuis internet (« Add URL » est masqué).
-- Le bouton réduire de Webamp ne fait rien : utilisez celui de la fenêtre de Kazo OS.
-- Les musiques des lecteurs réseau (`/mnt`) demandent une version de Kazo OS à venir.
-- Avec Kazo OS 3.0.0, après l'installation, déconnectez-vous et reconnectez-vous avant d'ouvrir de
-  la musique : l'OS ne donne ses accès à une nouvelle app qu'à la connexion suivante.
+- Demande Kazo OS 3.1.0 ou plus récent.
 
 ## Licences
 

@@ -23,8 +23,8 @@ in a notification on its first launch.
 
 ## Build and run
 
-The repository was made with the Kazo OS `kazoos-solution` template, on Kazo OS 3.0.0
-(`external/KazoOs`, a submodule on the `v3.0.0` tag).
+The repository was made with the Kazo OS `kazoos-solution` template, now on Kazo OS 3.1.0
+(`external/KazoOs`, a submodule on the `v3.1.0` tag).
 
 ```bash
 git clone --recurse-submodules https://github.com/Kazo-ca/Os-App-Webamp.git
@@ -54,6 +54,4 @@ its `wwwroot`) and Webamp's package (`dotnet build src/Kazo.Webamp -c Release -t
 ## Install
 
 Once released: from the Kazo OS Store (category Multimedia), or `sudo kazopkg install Kazo-ca/Os-App-Webamp`
-(this repository's `kazoos-packages` branch). Kazo OS 3.0.0 grants a newly installed app its
-capabilities at the next sign-in: sign out and in again before opening music
-([Kazo-ca/Os#386](https://github.com/Kazo-ca/Os/issues/386)).
+(this repository's `kazoos-packages` branch). Webamp needs Kazo OS 3.1.0 or later.

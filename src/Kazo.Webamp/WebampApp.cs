@@ -62,7 +62,7 @@ public sealed class WebampApp : AppDefinition
 
     /// <inheritdoc />
     /// <remarks>The tag that publishes to the Kazo OS Store must be v + this version.</remarks>
-    public override string Version => "1.0.0";
+    public override string Version => "1.1.0";
 
     /// <inheritdoc />
     /// <remarks>One Webamp per user: opening a file while it runs reaches the open window (decision 5).</remarks>

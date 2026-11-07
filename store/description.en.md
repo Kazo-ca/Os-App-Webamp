@@ -11,6 +11,8 @@ by Jordan Eldredge: player, equalizer, playlist and the Milkdrop visualizer, as 
   music and the music of its subfolders, sorted by path).
 - Webamp's "Open", "Add file" and "Add dir" show the Kazo OS dialogs.
 - One window: what you open is added to the current list.
+- **Network drives** too: music, lists and folders of a folder of your computer mounted in Kazo OS
+  (`/mnt/<name>`, Chrome and Edge on a computer) open like your own files.
 
 ## Playlists
 
@@ -29,16 +31,14 @@ menu. A notification says so on the first launch.
   place of its windows and double size.
 - The window's title follows the track ("Artist - Title - Webamp"); the keyboard's media keys work.
 - Webamp's shortcuts only act while its window has the focus.
+- Webamp's minimize button minimizes its Kazo OS window; the music keeps playing.
 - **Milkdrop** (Butterchurn, 2 MB) is downloaded only when its window first opens.
 
 ## Limits of the first version
 
 - Desktop only (no phone version).
 - No music from the internet ("Add URL" is hidden).
-- Webamp's minimize button does nothing: use the Kazo OS window's.
-- Music on network drives (`/mnt`) needs a coming Kazo OS version.
-- With Kazo OS 3.0.0, sign out and in again after installing, before opening music: the OS gives a
-  new app its access only at the next sign-in.
+- Needs Kazo OS 3.1.0 or later.
 
 ## Licenses
 

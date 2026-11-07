@@ -186,6 +186,7 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
 
         _player = player;
         _player.Closed += OnWebampClosedAsync;
+        _player.Minimized += OnWebampMinimizedAsync;
         _player.PlaylistChanged += OnPlaylistChanged;
         _player.LoadListRequested += OnLoadListRequestedAsync;
         _player.SaveListRequested += OnSaveListRequestedAsync;
@@ -241,6 +242,17 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
         catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException)
         {
             // Already stopping.
+        }
+    }
+
+    // Webamp's minimize button (or its "minimize" shortcut) minimizes the OS window: Kazo OS 3.1.0
+    // lets an app minimize its own window (issue Kazo-ca/Os#384, ADR 0234 of Kazo OS). The music
+    // keeps playing; the taskbar button brings the window back.
+    private async Task OnWebampMinimizedAsync()
+    {
+        if (!_closing)
+        {
+            await MinimizeWindowAsync(AppContext.CancellationToken);
         }
     }
 
@@ -436,7 +448,7 @@ public sealed partial class WebampWindow : IAsyncDisposable, IWindowCloseGuard
     }
 
     // Where the dialogs open: the last folder used, else ~/Music when it exists, else ~. Always given:
-    // without it the dialogs of Kazo OS 3.0.0 open /home/<user id>, which does not exist.
+    // Kazo OS 3.0.0 opened /home/<user id> without it (issue Kazo-ca/Os#385).
     private async Task<VirtualPath> StartFolderAsync()
     {
         string music = KazoPath.Combine(AppContext.HomeDirectory, "Music");
