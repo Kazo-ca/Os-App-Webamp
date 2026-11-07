@@ -486,5 +486,5 @@ $RECYCLE.BIN/
 node_modules/
 /node_modules
 
-# Private signing keys (ADR 0219 of Kazo OS): never in the repository.
+# Private keys: never in the repository.
 *.pem
