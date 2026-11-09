@@ -169,7 +169,9 @@ public static partial class PlaylistReader
             ? TimeSpan.FromSeconds(seconds)
             : null;
 
-    private static string[] SplitLines(string text) => text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
+    // Not string.Split(string[], StringSplitOptions): the trimmed Kazo OS up to 3.3.0 does not have
+    // that overload (Kazo-ca/Os ADR 0242). Same result: CRLF, LF and CR each end a line.
+    private static string[] SplitLines(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
     [GeneratedRegex(@"^(?<key>File|Title|Length)(?<number>[0-9]+)\s*=(?<value>.*)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PlsLine();
