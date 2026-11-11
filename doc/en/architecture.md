@@ -422,6 +422,13 @@ console error. It found two things:
    OS 3.1.0; the test still signs in again after installing (checked on 3.0.0,
    not run again on 3.1.0).
 
+Later (version 1.1.1, 2026-11-09), an exact signature check written for IRC
+found in Webamp 1.1.0 a call to `String.Split(string[], StringSplitOptions)`
+(reading `.m3u`/`.pls` playlists) missing from the trimmed OS. The `kazopkg`
+check only compared the parameter count and let it through: opening a playlist
+would have stopped the window. Lines are now split with `Replace` then
+`Split(char)`, and Kazo OS keeps CoreLib whole ([ADR 0242](https://github.com/Kazo-ca/Os/blob/main/doc/en/wasm/dev/adr/0242-framework-api-for-installed-apps.md)).
+
 Checked on 2026-11-06 with Kazo OS 3.0.0 (submodule `v3.0.0`, Release publish of
 `OS/Kazo.Os.Ecosystem`) and the `KazoOsPack` package (14 files, unsigned:
 `KOSAPP0063`). The `v1.0.0` tag and the catalog PR come after the merge into

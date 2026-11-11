@@ -439,6 +439,14 @@ paquet, aucune erreur dans la console. Il a trouvé deux choses :
    corrigée dans Kazo OS 3.1.0 ; le test se reconnecte encore après
    l'installation (vérifié sur 3.0.0, pas relancé sur 3.1.0).
 
+Plus tard (version 1.1.1, 2026-11-09), un contrôle exact des signatures, fait
+pour IRC, a trouvé dans Webamp 1.1.0 un appel à `String.Split(string[],
+StringSplitOptions)` (lecture des listes `.m3u`/`.pls`) absent de l'OS rogné.
+Le contrôle de `kazopkg` ne comparait que le nombre de paramètres et l'avait
+laissé passer : ouvrir une liste de lecture aurait arrêté la fenêtre. Les
+lignes sont maintenant découpées par `Replace` puis `Split(char)`, et Kazo OS
+garde CoreLib entière ([ADR 0242](https://github.com/Kazo-ca/Os/blob/main/doc/fr/wasm/dev/adr/0242-framework-api-for-installed-apps.md)).
+
 Vérifié le 2026-11-06 avec Kazo OS 3.0.0 (sous-module `v3.0.0`, publication
 Release de `OS/Kazo.Os.Ecosystem`) et le paquet de `KazoOsPack` (14 fichiers,
 non signé : `KOSAPP0063`). Le tag `v1.0.0` et la PR au catalogue viennent après
