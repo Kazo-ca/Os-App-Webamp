@@ -5,6 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "store:readme": "node .github/scripts/store-readme.mjs",
     "test": "node --test tests/js/*.test.mjs",
     "test:e2e": "node --test --test-concurrency=1 tests/e2e/*.e2e.mjs",
     "store:screenshots": "node tests/store/screenshots.mjs",

@@ -1,6 +1,6 @@
 > [Version française](readme-fr.md)
 
-<!-- Store listing: the same text as store/description.en.md and the same screenshots as the Kazo OS Store (store/screenshots/). Change them together. -->
+<!-- Store listing: generated from store/ by .github/scripts/store-readme.mjs. Edit store/, then run it. -->
 
 <img src="store/icon.png" alt="" width="96" align="right">
 
