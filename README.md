@@ -65,9 +65,9 @@ community skin is included.
 
 ## Try it
 
-<!-- "Open in Kazo OS" link: https://os.kazo.ca/?autolaunch=ca.kazo.webamp goes here once Kazo OS supports it. -->
+[Open Webamp in Kazo OS](https://os.kazo.ca/?autolaunch=ca.kazo.webamp): the link starts Kazo OS, installs the app from the official Store and opens it.
 
-Open [Kazo OS](https://os.kazo.ca/) and install Webamp from the **Kazo OS Store** (category Music and video), or in the Kazo OS Terminal, as an administrator: `sudo kazopkg install Kazo-ca/Os-App-Webamp`.
+Or open [Kazo OS](https://os.kazo.ca/) and install Webamp from the **Kazo OS Store** (category Music and video), or in the Kazo OS Terminal, as an administrator: `sudo kazopkg install Kazo-ca/Os-App-Webamp`.
 
 ## About Kazo OS
 
