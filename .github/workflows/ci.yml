@@ -42,6 +42,9 @@ jobs:
       - name: Check the Kazo OS submodule
         run: bash .github/scripts/check-kazoos-submodule.sh
 
+      - name: Check the README shows the Store listing
+        run: node .github/scripts/store-readme.mjs --check
+
       # The Release profile: Kazo OS packages from nuget.org, at the submodule's version. This is
       # what the Kazo OS Store compiles.
       - name: Build (Release, packages)
