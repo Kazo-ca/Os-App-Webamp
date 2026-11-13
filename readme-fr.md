@@ -67,7 +67,7 @@ le distribue : son dessin appartient à Nullsoft et n'est pas sous MIT (voir
 
 ## Essayer
 
-<!-- Lien « Ouvrir dans Kazo OS » : https://os.kazo.ca/?autolunch=ca.kazo.webamp va ici quand Kazo OS le prendra en charge. -->
+<!-- Lien « Ouvrir dans Kazo OS » : https://os.kazo.ca/?autolaunch=ca.kazo.webamp va ici quand Kazo OS le prendra en charge. -->
 
 Ouvrez [Kazo OS](https://os.kazo.ca/) et installez Webamp depuis le **Kazo OS Store** (catégorie Musique et vidéo), ou dans le Terminal de Kazo OS, en administrateur : `sudo kazopkg install Kazo-ca/Os-App-Webamp`.
 
