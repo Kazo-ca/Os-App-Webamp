@@ -14,7 +14,9 @@ public sealed class ManifestTests
         Assert.Equal("Webamp", _app.Name);
         Assert.Equal("pub.kazo", _app.PublisherId);
         Assert.Equal("multimedia", _app.Category);
-        Assert.Equal("1.1.1", _app.Version);
+        // The Kazo OS SDK update raises the version (x.y.z, or x.y.z-beta.n on beta): only its
+        // form is checked here, so the update's CI does not fail on a pinned number.
+        Assert.Matches(@"^\d+\.\d+\.\d+(-beta\.\d+)?$", _app.Version);
         Assert.Equal(AppKind.Window, _app.Kind);
         Assert.Equal(typeof(WebampWindow), _app.EntryPoint);
     }
