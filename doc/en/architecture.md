@@ -26,7 +26,7 @@ Os-App-Webamp/
 │  ├─ js/                    # tests of the JavaScript module (node --test)
 │  └─ e2e/                   # runs in the host (node --test + Playwright)
 ├─ store/                    # Kazo OS Store listing (completed by work item 6)
-├─ .github/workflows/        # ci.yml, publish-*.yml, tag-release.yml
+├─ .github/workflows/        # ci.yml, publish-*.yml, tag-release.yml, sdk-update.yml (calls to Os-AppTemplate@v1)
 └─ package.json              # tools of the JavaScript tests
 ```
 
@@ -433,6 +433,24 @@ Checked on 2026-11-06 with Kazo OS 3.0.0 (submodule `v3.0.0`, Release publish of
 `OS/Kazo.Os.Ecosystem`) and the `KazoOsPack` package (14 files, unsigned:
 `KOSAPP0063`). The `v1.0.0` tag and the catalog PR come after the merge into
 `main`, through the "Tag a release" workflow.
+
+### Shared workflows and the Kazo OS SDK update
+
+Since Kazo OS ADR 0271 (§4, §7), the workflows of this repository are one-line
+calls to the reusable workflows of
+[`Kazo-ca/Os-AppTemplate`](https://github.com/Kazo-ca/Os-AppTemplate) at the
+`v1` tag (`kazoos-ci.yml`, `kazoos-publish-to-store.yml`,
+`kazoos-publish-packages.yml`, `kazoos-tag-release.yml`,
+`kazoos-sdk-update.yml`): a fix is made once, there. `tag-release.yml` tags a
+commit of `main`, or of `beta` for a beta version (`1.2.1-beta.1`), which goes
+to the catalog's `beta` branch. `sdk-update.yml` ("Kazo OS SDK update") moves
+the app to each Kazo OS release (dispatch `kazoos-sdk-released` from Kazo OS,
+hourly check otherwise): branch `kazoos-sdk/<version>`, version raised by
+`.github/scripts/bump-app-version.sh`, the same CI as `ci.yml`, then publishing
+on the beta channel (Kazo OS pre-release) or on `main` (stable minor or major);
+a red CI opens a `TODO` issue. Tokens: organisation secrets
+`KAZO_AUTOMATION_APP_ID`/`KAZO_AUTOMATION_APP_KEY`, or `HACK_STORE_TOKEN`; never
+a signing key.
 
 ## Network drives
 
