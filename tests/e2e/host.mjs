@@ -79,6 +79,13 @@ export async function boot(page, baseUrl) {
     await inputs.nth(2).fill('matrix123');
     await inputs.nth(3).fill('matrix123');
     await page.getByRole('button', { name: 'Create local profile' }).click();
+    // The welcome wizard (Kazo OS ADR 0276, from 3.4.0) shows once per account: skip it when
+    // this Kazo OS version has it.
+    const skip = page.locator('.welcome-skip');
+    await skip.or(page.getByText('Applications', { exact: true })).first().waitFor({ timeout: 60_000 });
+    if (await skip.isVisible()) {
+        await skip.click();
+    }
     await page.getByText('Applications', { exact: true }).waitFor({ timeout: 60_000 });
 }
 
