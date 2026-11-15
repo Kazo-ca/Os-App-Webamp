@@ -80,6 +80,9 @@ test('a .wsz opened in the OS is put on and listed in the Skins menu, and the im
     await waitForOtherImage(page, baseImage);
     assert.equal(await page.locator('#webamp').count(), 1);
 
+    // The file reaches Webamp without raising its window: the Terminal typed in is still in front,
+    // so Webamp comes back with its taskbar button before its menu is opened.
+    await page.locator('.taskbar-item', { hasText: /Webamp/ }).click();
     const items = await openSkinsMenu(page);
     assert.deepEqual((await items.allInnerTexts()).map(text => text.trim()).filter(Boolean), ['Load Skin...', '<Base Skin>', 'Green']);
     await page.close();
