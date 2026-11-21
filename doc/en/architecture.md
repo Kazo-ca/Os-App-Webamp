@@ -483,6 +483,8 @@ The test `.mp3` files (`tests/e2e/fixtures/tone.mp3` and `tone-220.mp3`, 4 s, 16
 `tests/e2e/fixtures/make-tone.sh` (ffmpeg) and committed;
 `tests/e2e/fixtures/tones.m3u` lists that track, a missing file and a web address.
 
+In the CI (Kazo OS ADR 0281 §5), `KAZOOS_E2E_WWWROOT`, `KAZOOS_E2E_PACKAGES` and `KAZOOS_E2E_REPOSITORY` are set: `tests/e2e/host.mjs` then serves the published trimmed OS through the shared harness of the Kazo OS submodule, installs Webamp with `sudo kazopkg install` in each fresh profile (`boot`), and the suites fail on an error naming a missing member or type (`assertNoFailures`). Without the variables, or with a submodule older than 3.5.1 (no harness), the runs use the `dotnet run` host of `src/Kazo.Webamp.Os`.
+
 ## Progress
 
 | Work item | What this document describes |

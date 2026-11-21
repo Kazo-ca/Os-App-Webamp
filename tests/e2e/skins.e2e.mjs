@@ -18,7 +18,8 @@ before(async () => {
 
 after(async () => {
     await browser?.close();
-    host?.stop();
+    await host?.stop();
+    host?.assertNoFailures();
 });
 
 const TIP = 'To change the skin: double-click a .wsz file';

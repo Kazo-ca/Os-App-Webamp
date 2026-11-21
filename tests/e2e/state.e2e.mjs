@@ -15,7 +15,8 @@ before(async () => {
 
 after(async () => {
     await browser?.close();
-    host?.stop();
+    await host?.stop();
+    host?.assertNoFailures();
 });
 
 /** The window title Webamp takes while the test tone is current: "Artist - Title - Webamp". */

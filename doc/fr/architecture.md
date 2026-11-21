@@ -504,6 +504,8 @@ Les `.mp3` de test (`tests/e2e/fixtures/tone.mp3` et `tone-220.mp3`, 4 s, 16 Ko)
 `tests/e2e/fixtures/make-tone.sh` (ffmpeg) et validé dans le dépôt ;
 `tests/e2e/fixtures/tones.m3u` liste ce morceau, un fichier absent et une adresse web.
 
+Dans la CI (ADR 0281 §5 de Kazo OS), `KAZOOS_E2E_WWWROOT`, `KAZOOS_E2E_PACKAGES` et `KAZOOS_E2E_REPOSITORY` sont définies : `tests/e2e/host.mjs` sert alors l'OS rogné publié par le harnais partagé du sous-module de Kazo OS, installe Webamp avec `sudo kazopkg install` dans chaque profil neuf (`boot`), et les séries échouent sur une erreur qui nomme un membre ou un type manquant (`assertNoFailures`). Sans ces variables, ou avec un sous-module plus ancien que 3.5.1 (sans harnais), les parcours utilisent l'hôte `dotnet run` de `src/Kazo.Webamp.Os`.
+
 ## Avancement
 
 | Chantier | Ce que ce document décrit |
