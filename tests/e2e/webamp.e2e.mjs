@@ -15,7 +15,8 @@ before(async () => {
 
 after(async () => {
     await browser?.close();
-    host?.stop();
+    await host?.stop();
+    host?.assertNoFailures();
 });
 
 // Webamp's taskbar button: the OS window is there while it shows. Its text is the window's title,

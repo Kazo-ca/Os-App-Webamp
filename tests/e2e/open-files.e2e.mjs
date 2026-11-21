@@ -15,7 +15,8 @@ before(async () => {
 
 after(async () => {
     await browser?.close();
-    host?.stop();
+    await host?.stop();
+    host?.assertNoFailures();
 });
 
 /** The titles of Webamp's list, in order, and the index (from 0) of the current track. */
