@@ -22,7 +22,8 @@ before(async () => {
 
 after(async () => {
     await browser?.close();
-    host?.stop();
+    await host?.stop();
+    host?.assertNoFailures();
 });
 
 // A list that names its track relative to itself, as a list saved on another computer does.
